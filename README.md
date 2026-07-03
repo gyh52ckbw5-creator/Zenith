@@ -1,0 +1,121 @@
+# Zenith
+
+Zenith, birden fazla **ücretsiz** yapay zeka modelini (yerel Ollama modelleri +
+Groq, Google Gemini, OpenRouter, Cerebras gibi sağlayıcıların ücretsiz
+katmanları) tek bir kişisel asistanda birleştiren, terminalden çalışan bir
+"Jarvis" tarzı asistandır.
+
+Tek bir modele bağımlı kalmak yerine, Zenith şunları yapabilir:
+
+- **Tek model modu**: Öncelik sırasına göre en iyi kullanılabilir modeli
+  dener; bir model başarısız olursa (rate limit, hata, kapalı) otomatik
+  olarak bir sonrakine geçer (fallback zinciri).
+- **Konsey modu (`/council`)**: Aynı soruyu birden fazla ücretsiz modele
+  paralel olarak sorar, sonra bir "sentezleyici" model bu cevapları
+  birleştirip tek, tutarlı bir nihai cevap üretir. Yani gerçekten
+  *"tüm ücretsiz AI modelleri birlikte çalışıyor"*.
+- **Hafıza**: Konuşmalar `~/.zenith/memory.json` içinde saklanır, bir
+  sonraki oturumda kaldığın yerden devam edersin.
+- **Yerel araçlar**: Basit hesaplama (`hesapla: 12*7`) ve saat sorgusu gibi
+  komutlar hiç bir modele gitmeden yerel olarak cevaplanır.
+
+## Mimari
+
+```
+zenith/
+  config.py      # config/models.yaml içindeki model kaydını yükler
+  providers.py    # LiteLLM üzerinden herhangi bir sağlayıcıyı çağıran ince katman
+  router.py       # tek-model modu: öncelik sıralı fallback zinciri
+  council.py      # konsey modu: paralel sorgu + sentez
+  memory.py       # dosya tabanlı konuşma hafızası
+  tools.py        # yerel, LLM'siz komutlar (hesap makinesi, saat)
+  assistant.py    # hepsini birleştiren ZenithAssistant sınıfı
+  cli.py          # interaktif terminal arayüzü
+```
+
+Sağlayıcı çağrıları [LiteLLM](https://github.com/BerriAI/litellm) üzerinden
+yapılır; bu sayede Ollama, Groq, Gemini, OpenRouter, Cerebras ve LiteLLM'in
+desteklediği 100+ sağlayıcıdan herhangi biri, `config/models.yaml` dosyasına
+tek satır eklenerek kullanılabilir hale gelir.
+
+## Kurulum
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+cp .env.example .env
+```
+
+`.env` dosyasını, sahip olduğun ücretsiz API anahtarlarıyla doldur (hiçbirini
+doldurmasan da yerel Ollama ile çalışabilirsin):
+
+| Sağlayıcı | Ücretsiz anahtar nereden alınır |
+|---|---|
+| Groq | https://console.groq.com/keys |
+| Google Gemini | https://aistudio.google.com/apikey |
+| OpenRouter (`:free` modeller) | https://openrouter.ai/keys |
+| Cerebras | https://cloud.cerebras.ai |
+| Ollama (yerel, sınırsız) | https://ollama.com — kurduktan sonra `ollama pull llama3.1` |
+
+Not: Sağlayıcıların ücretsiz katman koşulları zamanla değişebilir;
+`config/models.yaml` dosyasını kendi hesabına göre güncelleyebilirsin.
+
+## Kullanım
+
+```bash
+python -m zenith
+```
+
+```
+sen> merhaba, bugün ne yapabilirsin?
+zenith> ...
+
+sen> /council
+Konsey modu: acik
+
+sen> kuantum bilgisayarları basitçe açıklar mısın?
+zenith> (birden fazla ücretsiz model paralel çalışıp cevaplarını birleştirir)
+```
+
+Komutlar:
+
+- `/council` — konsey modunu aç/kapat
+- `/models` — yapılandırılmış tüm modelleri ve kullanılabilirlik durumlarını listele
+- `/reset` — konuşma hafızasını temizle
+- `/exit` — çıkış
+
+## Yeni bir ücretsiz model eklemek
+
+`config/models.yaml` dosyasına yeni bir giriş eklemen yeterli:
+
+```yaml
+- name: benim-yeni-modelim
+  litellm_id: groq/llama-3.1-70b-versatile
+  provider: groq
+  requires_key: GROQ_API_KEY
+  tags: [chat, reasoning]
+  priority: 1
+```
+
+`litellm_id` formatı için [LiteLLM sağlayıcı
+dökümantasyonuna](https://docs.litellm.ai/docs/providers) bakabilirsin.
+
+## Testler
+
+```bash
+pip install -r requirements-dev.txt
+pytest
+```
+
+Testler gerçek API çağrısı yapmaz; sağlayıcı katmanı mock'lanarak router ve
+konsey mantığı (fallback, paralel sorgulama, sentez) izole şekilde test
+edilir.
+
+## Yol haritası fikirleri
+
+- Fonksiyon çağırma / araç kullanımı (web arama, dosya okuma) için ortak bir
+  şema katmanı
+- Sesli komut (wake word) desteği
+- Basit bir web arayüzü (FastAPI + WebSocket)
+- Uzun süreli hafıza (kullanıcı hakkında kalıcı bilgi/tercihler)
