@@ -43,6 +43,22 @@ class ChatResponse(BaseModel):
     council: bool
 
 
+@app.get("/api/health")
+async def health() -> dict:
+    """Deploy sonrasi hizli kontrol: kac model hazir, sistem ayakta mi."""
+    available = _assistant.config.available_models()
+    return {
+        "status": "ok" if available else "no_models",
+        "ready_models": [m.name for m in available],
+        "hint": (
+            None
+            if available
+            else "Hicbir model hazir degil. Ortam degiskenlerine en az bir ucretsiz "
+            "API anahtari ekleyin (orn. GROQ_API_KEY) ya da yerelde Ollama calistirin."
+        ),
+    }
+
+
 @app.get("/api/models")
 async def list_models() -> dict:
     return {"models": _assistant.list_models()}

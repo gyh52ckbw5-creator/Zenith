@@ -14,6 +14,11 @@ from dataclasses import dataclass
 from .config import ZenithConfig
 from .providers import ModelReply, ProviderError, call_model
 
+# Konsey iki asamali (paralel gorusler + sentez) calistigi icin, toplamin
+# serverless fonksiyon limitlerine (orn. Vercel 60 sn) sigmasi adina her
+# asamaya varsayilandan daha siki bir zaman asimi verilir.
+COUNCIL_STAGE_TIMEOUT_SECONDS = 25
+
 SYNTHESIS_SYSTEM_PROMPT = (
     "Sen Zenith'in sentez motorusun. Sana birden fazla yapay zeka modelinin "
     "ayni soruya verdigi cevaplar verilecek. Gorevin: bu cevaplardaki dogru, "
@@ -36,7 +41,10 @@ async def _gather_opinions(
     config: ZenithConfig, messages: list[dict], tags: tuple[str, ...]
 ) -> tuple[list[ModelReply], list[str]]:
     candidates = config.models_for_tags(tags)[: config.council_max_parallel]
-    tasks = [call_model(spec, messages) for spec in candidates]
+    tasks = [
+        call_model(spec, messages, timeout=COUNCIL_STAGE_TIMEOUT_SECONDS)
+        for spec in candidates
+    ]
     results = await asyncio.gather(*tasks, return_exceptions=True)
 
     opinions: list[ModelReply] = []
@@ -92,7 +100,9 @@ async def ask(
     if synth_spec is not None:
         try:
             synthesis = await call_model(
-                synth_spec, _build_synthesis_messages(user_question, opinions)
+                synth_spec,
+                _build_synthesis_messages(user_question, opinions),
+                timeout=COUNCIL_STAGE_TIMEOUT_SECONDS,
             )
             return CouncilResult(
                 final_answer=synthesis.content,
