@@ -53,6 +53,17 @@ Tek bir modele bağımlı kalmak yerine, Zenith şunları yapabilir:
 - **Sesli konuşma modu**: 🔊 düğmesiyle eller-serbest Jarvis: mikrofona konuş,
   Zenith sesle cevaplasın, cevap bitince otomatik tekrar dinlesin — kesintisiz
   döngü (destekleyen tarayıcılarda).
+- **Uzun süreli hafıza (profil)**: `beni hatirla: adım Can, Python severim` de;
+  Zenith bunu her sohbette hatırlar. `profilim` ile görür, `profili temizle` ile
+  sıfırlarsın.
+- **Kendi belgelerinle sohbet (RAG)**: 📄 ile bir metin dosyası yükle, sonra
+  içeriğine soru sor. Anahtarsız, yerel anahtar-kelime getirme ile çalışır;
+  `belgelerim` ile listeler, `belgeleri temizle` ile silersin.
+- **Ajan modu**: "Ajan" anahtarını aç; model, cevaplamak için gereken araçları
+  (hava, wiki, kur, arama, haber, sözlük) kendisi çağırır — çok adımlı sorular
+  için (ör. "İstanbul'da hava nasıl, ona göre ne giyeyim?").
+- **Hatırlatıcılar**: `hatirlatici: 10 dk suyu kapat` de; süre dolunca tarayıcı
+  bildirimi gelir (uygulama açıkken/arka planda, en iyi çaba).
 - **Cilalı sohbet arayüzü** (Open WebUI / LibreChat / Lobe Chat'ten ilhamla):
   hoş geldin ekranı ve tek dokunuşla dolduran öneri çipleri, markdown
   görüntüleme (kod blokları, listeler, linkler), her cevapta kopyala butonu,

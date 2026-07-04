@@ -42,12 +42,18 @@ class ChatMessage(BaseModel):
 class ChatRequest(BaseModel):
     message: str
     council: bool = False
+    agent: bool = False  # ajan modu: model araclari kendisi cagirir
     model: str | None = None  # arayuzden secilen model (bos = otomatik)
     system: str | None = None  # istege bagli kisilik/system prompt override
     # Coklu sohbet: istemci o oturumun gecmisini gonderir (sunucu her oturumu
     # kendi tutmaz). Verilirse baglam bundan kurulur, paylasilan hafiza kullanilmaz.
     history: list[ChatMessage] | None = None
     image: str | None = None  # cok-modlu: data: URL olarak gorsel (vision)
+
+
+class DocRequest(BaseModel):
+    name: str
+    text: str
 
 
 class ChatResponse(BaseModel):
@@ -103,6 +109,7 @@ def _history_payload(payload: ChatRequest) -> list[dict] | None:
 async def chat(payload: ChatRequest) -> ChatResponse:
     async with _lock:
         _assistant.council_mode = payload.council
+        _assistant.agent_mode = payload.agent
         try:
             result = await _assistant.ask(
                 payload.message,
@@ -133,6 +140,7 @@ async def chat_stream(payload: ChatRequest) -> StreamingResponse:
         await _lock.acquire()
         try:
             _assistant.council_mode = payload.council
+            _assistant.agent_mode = payload.agent
             async for event in _assistant.ask_stream(
                 payload.message,
                 model=payload.model,
@@ -151,6 +159,26 @@ async def chat_stream(payload: ChatRequest) -> StreamingResponse:
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
+
+
+@app.post("/api/docs")
+async def add_doc(payload: DocRequest) -> dict:
+    """RAG: bir belge (metin) yukler; parcalara bolunup saklanir."""
+    async with _lock:
+        added = _assistant.docs.add_document(payload.name.strip() or "belge", payload.text)
+    return {"ok": True, "chunks": added, "documents": _assistant.docs.documents()}
+
+
+@app.get("/api/docs")
+async def list_docs() -> dict:
+    return {"documents": _assistant.docs.documents()}
+
+
+@app.post("/api/docs/clear")
+async def clear_docs() -> dict:
+    async with _lock:
+        _assistant.docs.clear()
+    return {"ok": True}
 
 
 @app.post("/api/reset")

@@ -2,6 +2,7 @@ const chat = document.getElementById("chat");
 const form = document.getElementById("chat-form");
 const input = document.getElementById("chat-input");
 const councilToggle = document.getElementById("council-toggle");
+const agentToggle = document.getElementById("agent-toggle");
 const ttsToggle = document.getElementById("tts-toggle");
 const exportBtn = document.getElementById("export-btn");
 const modelSelect = document.getElementById("model-select");
@@ -17,6 +18,8 @@ const imageInput = document.getElementById("image-input");
 const imagePreview = document.getElementById("image-preview");
 const imageThumb = document.getElementById("image-thumb");
 const imageRemove = document.getElementById("image-remove");
+const docBtn = document.getElementById("doc-btn");
+const docInput = document.getElementById("doc-input");
 
 const STORE_KEY = "zenith-conversations-v1";
 const OLD_KEY = "zenith-history-v1";
@@ -183,6 +186,7 @@ function renderWelcome() {
         <button class="chip" data-fill="haber: ">Son haberler</button>
         <button class="chip" data-fill="sifre: 20">Sifre uret</button>
         <button class="chip" data-fill="not: ">Not al</button>
+        <button class="chip" data-fill="beni hatirla: ">Beni tani</button>
         <button class="chip" data-send="__council__">Konseye sor</button>
       </div>
     </div>`;
@@ -265,6 +269,11 @@ function metaFor(data) {
   }
   if (data.source === "search") return "web aramasiyla cevaplandi";
   if (data.source === "summary") return "sayfa ozetlendi";
+  if (data.source === "rag") return "belgelerinden cevaplandi";
+  if (data.source === "agent" && data.contributors?.length) {
+    return `ajan araclari: ${data.contributors.join(", ")}`;
+  }
+  if (data.source === "agent") return "ajan";
   if (data.source === "skill") return "yetenek";
   if (data.source === "model" && data.contributors?.length) return data.contributors[0];
   return null;
@@ -276,9 +285,84 @@ function historyForApi() {
   return conv.messages.map((m) => ({ role: m.role, content: m.text }));
 }
 
+// --- Hatirlaticilar (istemci tarafi, zamanli tarayici bildirimi) ---
+const REMINDER_KEY = "zenith-reminders-v1";
+const REMINDER_RE = /^(?:hatirlatici|hat[iı]rlat[iı]c[iı]|reminder)\s*[:=]?\s*(\d+)\s*(dk|dakika|min|saat|sa|saniye|sn)?\s+(.+)$/i;
+
+function loadReminders() {
+  try {
+    return JSON.parse(localStorage.getItem(REMINDER_KEY)) || [];
+  } catch {
+    return [];
+  }
+}
+function saveReminders(list) {
+  localStorage.setItem(REMINDER_KEY, JSON.stringify(list));
+}
+
+function fireReminder(text) {
+  if ("Notification" in window && Notification.permission === "granted") {
+    new Notification("Zenith hatirlatici", { body: text, icon: "/static/icons/icon-192.png" });
+  }
+  addMeta(`⏰ Hatirlatici: ${text}`);
+  if (ttsToggle.checked || voiceMode) speak(`Hatirlatici. ${text}`);
+}
+
+function scheduleReminder(rem) {
+  const delay = rem.at - Date.now();
+  if (delay <= 0) {
+    fireReminder(rem.text);
+    return false;
+  }
+  // setTimeout 32-bit sinirini as: en fazla ~24 gun.
+  setTimeout(() => {
+    fireReminder(rem.text);
+    saveReminders(loadReminders().filter((r) => r.id !== rem.id));
+  }, Math.min(delay, 2 ** 31 - 1));
+  return true;
+}
+
+async function tryHandleReminder(message) {
+  const m = message.match(REMINDER_RE);
+  if (!m) return false;
+  const amount = parseInt(m[1], 10);
+  const unit = (m[2] || "dk").toLowerCase();
+  const text = m[3].trim();
+  let ms = amount * 60000; // varsayilan dakika
+  if (unit.startsWith("saat") || unit === "sa") ms = amount * 3600000;
+  else if (unit.startsWith("saniye") || unit === "sn") ms = amount * 1000;
+
+  if ("Notification" in window && Notification.permission === "default") {
+    try {
+      await Notification.requestPermission();
+    } catch {
+      /* yok say */
+    }
+  }
+
+  const rem = { id: `r_${Date.now()}`, at: Date.now() + ms, text };
+  const list = loadReminders();
+  list.push(rem);
+  saveReminders(list);
+  scheduleReminder(rem);
+
+  document.getElementById("welcome")?.remove();
+  renderBubble("user", message);
+  addMessageToConv("user", message, null, null);
+  const mins = Math.round(ms / 60000);
+  const when = ms < 60000 ? `${Math.round(ms / 1000)} saniye` : `${mins} dakika`;
+  const confirm = `Tamam, ${when} sonra hatirlatacagim: "${text}"`;
+  renderBubble("assistant", confirm);
+  addMessageToConv("assistant", confirm, "hatirlatici", null);
+  input.value = "";
+  autoGrow();
+  return true;
+}
+
 async function sendMessage(message, image) {
   if (busy) return "";
   if (!message && !image) return "";
+  if (!image && (await tryHandleReminder(message))) return "";
   busy = true;
 
   const history = historyForApi();
@@ -305,6 +389,7 @@ async function sendMessage(message, image) {
       body: JSON.stringify({
         message,
         council: councilToggle.checked,
+        agent: agentToggle.checked,
         model: modelSelect.value || null,
         history,
         image: image || null,
@@ -428,6 +513,27 @@ function clearImage() {
 }
 imageRemove.addEventListener("click", clearImage);
 
+// --- Belge yukleme (RAG) ---
+docBtn.addEventListener("click", () => docInput.click());
+docInput.addEventListener("change", async () => {
+  const file = docInput.files[0];
+  if (!file) return;
+  const text = await file.text();
+  docInput.value = "";
+  document.getElementById("welcome")?.remove();
+  try {
+    const res = await fetch("/api/docs", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: file.name, text }),
+    });
+    const data = await res.json();
+    addMeta(`belge yuklendi: ${file.name} (${data.chunks} parca) - artik ona soru sorabilirsin`);
+  } catch (err) {
+    addMeta(`belge yuklenemedi: ${err}`);
+  }
+});
+
 // --- Sesli giris + sesli konusma modu ---
 const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
 let recognition = null;
@@ -497,6 +603,13 @@ if (recognition) {
 (async () => {
   renderActive();
   renderSidebar();
+
+  // Bekleyen hatirlaticilari geri yukle (gecmis olanlar hemen tetiklenir).
+  const stillPending = [];
+  for (const rem of loadReminders()) {
+    if (scheduleReminder(rem)) stillPending.push(rem);
+  }
+  saveReminders(stillPending);
 
   try {
     const res = await fetch("/api/models");

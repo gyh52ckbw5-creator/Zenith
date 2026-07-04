@@ -337,7 +337,7 @@ button:active {
   font-weight: 700;
 }
 
-#mic-btn, #voice-btn, #attach-btn, #menu-btn {
+#mic-btn, #voice-btn, #attach-btn, #doc-btn, #menu-btn {
   padding: 0 12px;
   border-radius: 14px;
   font-size: 18px;

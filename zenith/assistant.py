@@ -7,10 +7,12 @@ import os
 import re
 from dataclasses import dataclass, field
 
-from . import council, router, skills, tools, websearch
+from . import agent, council, rag, router, skills, tools, websearch
 from .config import ZenithConfig, load_config
 from .memory import ConversationMemory
 from .notes import NotesStore
+from .profile import ProfileStore
+from .rag import DocStore
 
 DEFAULT_SYSTEM_PROMPT = (
     "Sen Zenith'sin: Iron Man'deki Jarvis tarzinda, kullanicinin kisisel "
@@ -69,13 +71,30 @@ NOTE_LIST_PATTERN = re.compile(r"^\s*(?:notlar|notlarim|notlarım|notes)\s*$", r
 NOTE_DELETE_PATTERN = re.compile(r"^\s*not(?:u)?\s+sil\s+(\d+)\s*$", re.IGNORECASE)
 NOTE_CLEAR_PATTERN = re.compile(r"^\s*notlar(?:i|ı)?\s+temizle\s*$", re.IGNORECASE)
 
+# --- Profil (uzun sureli hafiza) ---
+PROFILE_ADD_PATTERN = re.compile(
+    r"^\s*(?:beni hatirla|beni hatırla|profil ekle|remember)\s*[:=]\s*(.+)$", re.IGNORECASE
+)
+PROFILE_LIST_PATTERN = re.compile(r"^\s*(?:profilim|profil|hakkimda)\s*$", re.IGNORECASE)
+PROFILE_CLEAR_PATTERN = re.compile(r"^\s*profil(?:i|imi)?\s+temizle\s*$", re.IGNORECASE)
+
+# --- Belgeler (RAG) ---
+DOCS_LIST_PATTERN = re.compile(r"^\s*(?:belgelerim|belgeler|documents)\s*$", re.IGNORECASE)
+DOCS_CLEAR_PATTERN = re.compile(r"^\s*belgeler(?:i|imi)?\s+temizle\s*$", re.IGNORECASE)
+
+RAG_PROMPT = (
+    "Asagida kullanicinin kendi belgelerinden ilgili bolumler var. Soruyu "
+    "ONCELIKLE bu bolumlere dayanarak cevapla; belge yetersizse bunu belirt "
+    "ve genel bilgiyle tamamla. Hangi belgeden yararlandiginsa belirt."
+)
+
 
 @dataclass
 class AskResult:
     """Bir sorunun cevabi + nasil uretildigine dair meta bilgi."""
 
     text: str
-    # "local" | "model" | "council" | "search" | "skill" | "summary"
+    # "local"|"model"|"council"|"search"|"skill"|"summary"|"agent"|"rag"
     source: str = "model"
     contributors: list[str] = field(default_factory=list)
 
@@ -87,11 +106,21 @@ class ZenithAssistant:
         memory: ConversationMemory | None = None,
         council_mode: bool = False,
         notes: NotesStore | None = None,
+        profile: ProfileStore | None = None,
+        docs: DocStore | None = None,
+        agent_mode: bool = False,
     ):
         self.config = config or load_config()
         self.memory = memory if memory is not None else ConversationMemory()
         self.council_mode = council_mode
+        self.agent_mode = agent_mode
         self.notes = notes if notes is not None else NotesStore()
+        self.profile = profile if profile is not None else ProfileStore()
+        self.docs = docs if docs is not None else DocStore()
+
+    def _effective_system(self, system: str | None) -> str:
+        """Temel kisilige uzun sureli hafizayi (profil) ekler."""
+        return (system or system_prompt()) + self.profile.as_prompt()
 
     def _handle_notes(self, user_input: str) -> str | None:
         """Not komutlarini isler; eslesmezse None doner."""
@@ -115,6 +144,37 @@ class ZenithAssistant:
         if NOTE_CLEAR_PATTERN.match(user_input):
             self.notes.clear()
             return "Tum notlar temizlendi."
+
+        return None
+
+    def _handle_profile(self, user_input: str) -> str | None:
+        add = PROFILE_ADD_PATTERN.match(user_input)
+        if add:
+            self.profile.add(add.group(1).strip())
+            return "Tamam, bunu senin hakkinda hatirlayacagim (her sohbette)."
+
+        if PROFILE_LIST_PATTERN.match(user_input):
+            facts = self.profile.list()
+            if not facts:
+                return "Henuz senin hakkinda bir sey hatirlamiyorum. 'beni hatirla: ...' de."
+            return "**Senin hakkinda hatirladiklarim:**\n" + "\n".join(f"- {f}" for f in facts)
+
+        if PROFILE_CLEAR_PATTERN.match(user_input):
+            self.profile.clear()
+            return "Profil hafizasi temizlendi."
+
+        return None
+
+    def _handle_docs(self, user_input: str) -> str | None:
+        if DOCS_LIST_PATTERN.match(user_input):
+            names = self.docs.documents()
+            if not names:
+                return "Henuz belge yuklemedin. Arayuzden bir metin/PDF-metni yukleyebilirsin."
+            return "**Yuklu belgelerin:**\n" + "\n".join(f"- {n}" for n in names)
+
+        if DOCS_CLEAR_PATTERN.match(user_input):
+            self.docs.clear()
+            return "Tum belgeler silindi."
 
         return None
 
@@ -196,7 +256,7 @@ class ZenithAssistant:
         history yoksa (CLI): paylasilan hafizayi kullanir ve kullaniciyi ekler.
         image varsa kullanici mesaji cok-modlu (metin + gorsel) olur.
         """
-        sys = system or system_prompt()
+        sys = self._effective_system(system)
         content: object = user_input
         if image:
             content = [
@@ -243,6 +303,16 @@ class ZenithAssistant:
             self._remember(user_input, note_reply, history)
             return AskResult(text=note_reply, source="skill")
 
+        profile_reply = self._handle_profile(user_input)
+        if profile_reply is not None:
+            self._remember(user_input, profile_reply, history)
+            return AskResult(text=profile_reply, source="skill")
+
+        docs_reply = self._handle_docs(user_input)
+        if docs_reply is not None:
+            self._remember(user_input, docs_reply, history)
+            return AskResult(text=docs_reply, source="skill")
+
         for pattern, handler_name in _DIRECT_SKILLS:
             match = pattern.match(user_input)
             if match:
@@ -262,6 +332,24 @@ class ZenithAssistant:
             return await self._ask_with_search(
                 user_input, search_match.group(1), tags, model, system, history
             )
+
+        # Ajan modu: model gerektiginde araclari kendisi cagirir.
+        if self.agent_mode:
+            answer, used = await agent.run(self.config, user_input, model=model)
+            self._remember(user_input, answer, history)
+            return AskResult(text=answer, source="agent", contributors=used)
+
+        # RAG: kullanici belge yuklediyse, ilgili bolumleri baglama kat.
+        if not self.docs.is_empty():
+            chunks = self.docs.retrieve(user_input)
+            if chunks:
+                context = rag.DocStore.format_context(chunks)
+                prompt = f"{RAG_PROMPT}\n\nBelge bolumleri:\n{context}\n\nSoru: {user_input}"
+                messages = self._context_with_prompt(user_input, system, history, prompt)
+                result = await self._ask_models(messages, tags, model)
+                result.source = "rag"
+                self._persist_reply(history, result.text)
+                return result
 
         if self.council_mode:
             messages = self._compose(user_input, system, history, None)
@@ -290,7 +378,7 @@ class ZenithAssistant:
         """Bir gecici 'prompt' (arama/ozet baglami) iceren kullanici mesajiyla
         birlikte model'e gidecek mesaj listesini kurar. Ham baglam hafizaya
         yazilmaz; memory modunda gercek kullanici girdisi ayrica saklanir."""
-        sys = system or system_prompt()
+        sys = self._effective_system(system)
         if history is not None:
             return [{"role": "system", "content": sys}, *history, {"role": "user", "content": prompt}]
         self.memory.add("user", user_input)

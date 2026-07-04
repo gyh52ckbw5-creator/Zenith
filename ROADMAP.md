@@ -44,12 +44,17 @@ işaretler.
 - [x] Görsel yükleme + vision modelleriyle analiz
 - [x] Sesli konuşma modu (eller-serbest, kesintisiz döngü)
 
-## Faz 6 — Sıradaki fikirler (planlanıyor)
-- [ ] Gerçek fonksiyon çağırma (function calling) katmanı
-- [ ] Uzun süreli hafıza (kullanıcı tercihleri/profili)
-- [ ] Web Push ile hatırlatıcı bildirimleri
+## Faz 6 — Zeka & bağlam (tamamlandı)
+- [x] Uzun süreli hafıza (kullanıcı profili, her sohbete enjekte edilir)
+- [x] RAG: kendi belgelerinle sohbet (anahtarsız, yerel getirme)
+- [x] Fonksiyon çağırma / ajan modu (model araçları kendisi çağırır)
+- [x] Hatırlatıcı bildirimleri (zamanlı tarayıcı bildirimi)
+
+## Faz 7 — Sıradaki fikirler (planlanıyor)
+- [ ] Sunucu tarafı Web Push (uygulama kapalıyken bildirim; VAPID + cron)
 - [ ] Kod çalıştırma (güvenli sandbox)
-- [ ] RAG: kendi belgelerinle sohbet
+- [ ] Embedding tabanlı RAG (daha isabetli getirme)
+- [ ] PDF/DOCX ayrıştırma (şu an düz metin)
 
 Bir fikrin mi var? `config/models.yaml` ve `zenith/skills.py` en kolay
 genişletme noktalarıdır.
