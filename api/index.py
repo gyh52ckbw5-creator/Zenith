@@ -1,8 +1,9 @@
-"""Vercel Python runtime giris noktasi.
+"""Vercel Serverless Function entry point.
 
-Vercel, api/ altindaki bu dosyada `app` adinda bir ASGI uygulamasi arar ve
-vercel.json'daki rewrite kurali tum istekleri buraya yonlendirir. Boylece
-FastAPI uygulamasi (statik PWA dosyalari dahil) serverless olarak calisir.
+Zenith'i Vercel'de çalıştırmak için giriş noktası.
 """
 
-from zenith.server import app  # noqa: F401
+from zenith.server import app
+
+# Vercel Serverless Function
+handler = app
