@@ -153,3 +153,13 @@ async def manifest() -> FileResponse:
 @app.get("/sw.js")
 async def service_worker() -> FileResponse:
     return FileResponse(STATIC_DIR / "sw.js", media_type="application/javascript")
+
+
+def run() -> None:
+    """`zenith-web` konsol komutu / `python -m zenith web` giris noktasi."""
+    import os
+
+    import uvicorn
+
+    port = int(os.environ.get("PORT", "8000"))
+    uvicorn.run("zenith.server:app", host="0.0.0.0", port=port)

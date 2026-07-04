@@ -6,17 +6,23 @@ Servisler:
   - Wikipedia (ozet)                      -> "wiki: <konu>"
   - Hava durumu (open-meteo)              -> "hava: <sehir>"
   - Doviz kuru (frankfurter)              -> "kur: <miktar> <FROM> <TO>"
+  - Haber basliklari (Google News RSS)    -> "haber: <konu?>"
+  - Ingilizce sozluk (dictionaryapi.dev)  -> "sozluk: <kelime>"
+  - Sifre uretici (yerel, secrets)        -> "sifre: <uzunluk?>"
   - Sherlock tarzi kullanici adi aramasi  -> "kullanici: <ad>"
   - Web sayfasi getirme (ozetleme icin)   -> "ozetle: <url>"
 
-Hepsi httpx ile async yapilir ve serverless butcesini korumak icin kisa zaman
-asimlariyla calisir.
+Ag gerektirenler httpx ile async yapilir ve serverless butcesini korumak icin
+kisa zaman asimlariyla calisir.
 """
 
 from __future__ import annotations
 
 import asyncio
 import re
+import secrets
+import string
+import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from html.parser import HTMLParser
 
@@ -204,6 +210,91 @@ async def currency(spec: str) -> str:
 
     total = amount * rate
     return f"{amount:g} {frm} = {total:,.2f} {to} (1 {frm} = {rate:g} {to}, {data.get('date', '')})"
+
+
+# --------------------------------------------------------------------------- #
+# Haber basliklari (Google News RSS, anahtarsiz)
+# --------------------------------------------------------------------------- #
+async def news(topic: str = "", limit: int = 6) -> str:
+    topic = topic.strip()
+    if topic and topic.lower() not in {"gundem", "genel", "manset"}:
+        url = "https://news.google.com/rss/search"
+        params = {"q": topic, "hl": "tr", "gl": "TR", "ceid": "TR:tr"}
+    else:
+        url = "https://news.google.com/rss"
+        params = {"hl": "tr", "gl": "TR", "ceid": "TR:tr"}
+
+    async with _client() as client:
+        try:
+            resp = await client.get(url, params=params)
+            resp.raise_for_status()
+            root = ET.fromstring(resp.text)
+        except (httpx.HTTPError, ET.ParseError) as exc:
+            return f"[haber hatasi] {exc}"
+
+    items = root.findall(".//item")[:limit]
+    if not items:
+        return f"'{topic}' icin haber bulunamadi." if topic else "Haber bulunamadi."
+
+    baslik = f"Son haberler ({topic})" if topic else "Son haberler"
+    lines = []
+    for it in items:
+        title = (it.findtext("title") or "").strip()
+        link = (it.findtext("link") or "").strip()
+        lines.append(f"- [{title}]({link})")
+    return f"**{baslik}:**\n" + "\n".join(lines)
+
+
+# --------------------------------------------------------------------------- #
+# Ingilizce sozluk (dictionaryapi.dev, anahtarsiz)
+# --------------------------------------------------------------------------- #
+async def dictionary(word: str) -> str:
+    word = word.strip().split()[0] if word.strip() else ""
+    if not word:
+        return "Bir kelime yazin, orn: sozluk: serendipity"
+
+    async with _client() as client:
+        try:
+            resp = await client.get(
+                f"https://api.dictionaryapi.dev/api/v2/entries/en/{word}"
+            )
+            if resp.status_code == 404:
+                return f"'{word}' icin (Ingilizce) tanim bulunamadi."
+            resp.raise_for_status()
+            entries = resp.json()
+        except (httpx.HTTPError, ValueError) as exc:
+            return f"[sozluk hatasi] {exc}"
+
+    lines = [f"**{word}**"]
+    for meaning in entries[0].get("meanings", [])[:3]:
+        pos = meaning.get("partOfSpeech", "")
+        definition = meaning.get("definitions", [{}])[0].get("definition", "")
+        if definition:
+            lines.append(f"- _{pos}_: {definition}")
+    return "\n".join(lines)
+
+
+# --------------------------------------------------------------------------- #
+# Sifre uretici (yerel, kriptografik olarak guvenli)
+# --------------------------------------------------------------------------- #
+async def password(spec: str = "") -> str:
+    length = 16
+    match = re.search(r"\d+", spec or "")
+    if match:
+        length = max(8, min(64, int(match.group())))
+
+    alphabet = string.ascii_letters + string.digits + "!@#$%^&*-_=+"
+    while True:
+        pw = "".join(secrets.choice(alphabet) for _ in range(length))
+        # En az bir kucuk, buyuk, rakam ve simge iceren bir sifre garanti et.
+        if (
+            any(c.islower() for c in pw)
+            and any(c.isupper() for c in pw)
+            and any(c.isdigit() for c in pw)
+            and any(c in "!@#$%^&*-_=+" for c in pw)
+        ):
+            break
+    return f"Uretilen sifre ({length} karakter):\n`{pw}`"
 
 
 # --------------------------------------------------------------------------- #

@@ -110,6 +110,62 @@ async def test_fetch_page_text_raises_on_http_error(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_password_generates_requested_length():
+    result = await skills.password("24")
+    assert "24 karakter" in result
+    pw = result.split("`")[1]
+    assert len(pw) == 24
+    assert any(c.isdigit() for c in pw)
+    assert any(c.isupper() for c in pw)
+
+
+@pytest.mark.asyncio
+async def test_password_default_length():
+    result = await skills.password("")
+    pw = result.split("`")[1]
+    assert len(pw) == 16
+
+
+@pytest.mark.asyncio
+async def test_news_parses_rss(monkeypatch):
+    rss = """<?xml version="1.0"?><rss><channel>
+      <item><title>Baslik 1</title><link>https://a</link></item>
+      <item><title>Baslik 2</title><link>https://b</link></item>
+    </channel></rss>"""
+
+    def handler(request):
+        return httpx.Response(200, text=rss)
+
+    monkeypatch.setattr(skills, "_client", _mock_client(handler))
+    result = await skills.news("teknoloji")
+    assert "Baslik 1" in result
+    assert "teknoloji" in result
+
+
+@pytest.mark.asyncio
+async def test_dictionary_returns_definition(monkeypatch):
+    def handler(request):
+        return httpx.Response(
+            200,
+            json=[{"meanings": [{"partOfSpeech": "noun", "definitions": [{"definition": "test tanimi"}]}]}],
+        )
+
+    monkeypatch.setattr(skills, "_client", _mock_client(handler))
+    result = await skills.dictionary("word")
+    assert "test tanimi" in result
+
+
+@pytest.mark.asyncio
+async def test_dictionary_handles_404(monkeypatch):
+    def handler(request):
+        return httpx.Response(404)
+
+    monkeypatch.setattr(skills, "_client", _mock_client(handler))
+    result = await skills.dictionary("qwzxq")
+    assert "bulunamadi" in result
+
+
+@pytest.mark.asyncio
 async def test_wikipedia_returns_extract(monkeypatch):
     def handler(request: httpx.Request) -> httpx.Response:
         if "search/title" in request.url.path:

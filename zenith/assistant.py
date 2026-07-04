@@ -10,6 +10,7 @@ from dataclasses import dataclass, field
 from . import council, router, skills, tools, websearch
 from .config import ZenithConfig, load_config
 from .memory import ConversationMemory
+from .notes import NotesStore
 
 DEFAULT_SYSTEM_PROMPT = (
     "Sen Zenith'sin: Iron Man'deki Jarvis tarzinda, kullanicinin kisisel "
@@ -51,6 +52,9 @@ _DIRECT_SKILLS = [
     (re.compile(r"^\s*(?:wiki|vikipedi)\s*[:=]\s*(.+)$", re.IGNORECASE), "wikipedia"),
     (re.compile(r"^\s*(?:hava|weather)\s*[:=]\s*(.+)$", re.IGNORECASE), "weather"),
     (re.compile(r"^\s*(?:kur|doviz|currency)\s*[:=]\s*(.+)$", re.IGNORECASE), "currency"),
+    (re.compile(r"^\s*(?:haberler|haber|news)\b\s*[:=]?\s*(.*)$", re.IGNORECASE), "news"),
+    (re.compile(r"^\s*(?:sozluk|sözlük|dictionary|tanim)\s*[:=]\s*(.+)$", re.IGNORECASE), "dictionary"),
+    (re.compile(r"^\s*(?:sifre|şifre|password)\b\s*(?:uret|üret)?\s*[:=]?\s*(.*)$", re.IGNORECASE), "password"),
     (
         re.compile(r"^\s*(?:kullanici|kullanıcı|sherlock|username)\s*[:=]\s*(.+)$", re.IGNORECASE),
         "username_search",
@@ -58,6 +62,12 @@ _DIRECT_SKILLS = [
 ]
 
 SUMMARIZE_PATTERN = re.compile(r"^\s*(?:ozetle|özetle|summarize)\s*[:=]\s*(\S+)\s*$", re.IGNORECASE)
+
+# --- Notlar (durumsal): ekle / listele / sil / temizle ---
+NOTE_ADD_PATTERN = re.compile(r"^\s*(?:not|hatirlat|hatırlat|note)\s*[:=]\s*(.+)$", re.IGNORECASE)
+NOTE_LIST_PATTERN = re.compile(r"^\s*(?:notlar|notlarim|notlarım|notes)\s*$", re.IGNORECASE)
+NOTE_DELETE_PATTERN = re.compile(r"^\s*not(?:u)?\s+sil\s+(\d+)\s*$", re.IGNORECASE)
+NOTE_CLEAR_PATTERN = re.compile(r"^\s*notlar(?:i|ı)?\s+temizle\s*$", re.IGNORECASE)
 
 
 @dataclass
@@ -76,10 +86,37 @@ class ZenithAssistant:
         config: ZenithConfig | None = None,
         memory: ConversationMemory | None = None,
         council_mode: bool = False,
+        notes: NotesStore | None = None,
     ):
         self.config = config or load_config()
         self.memory = memory if memory is not None else ConversationMemory()
         self.council_mode = council_mode
+        self.notes = notes if notes is not None else NotesStore()
+
+    def _handle_notes(self, user_input: str) -> str | None:
+        """Not komutlarini isler; eslesmezse None doner."""
+        add = NOTE_ADD_PATTERN.match(user_input)
+        if add:
+            count = self.notes.add(add.group(1).strip())
+            return f"Not eklendi (#{count}). 'notlarim' ile hepsini gorebilirsin."
+
+        if NOTE_LIST_PATTERN.match(user_input):
+            items = self.notes.list()
+            if not items:
+                return "Henuz notun yok. 'not: ...' ile ekleyebilirsin."
+            lines = [f"{i + 1}. {it['text']}  _({it['at']})_" for i, it in enumerate(items)]
+            return "**Notlarin:**\n" + "\n".join(lines)
+
+        delete = NOTE_DELETE_PATTERN.match(user_input)
+        if delete:
+            ok = self.notes.delete(int(delete.group(1)))
+            return "Not silindi." if ok else "O numarada bir not yok."
+
+        if NOTE_CLEAR_PATTERN.match(user_input):
+            self.notes.clear()
+            return "Tum notlar temizlendi."
+
+        return None
 
     async def ask(
         self,
@@ -150,6 +187,11 @@ class ZenithAssistant:
         if local_reply is not None:
             self._remember(user_input, local_reply)
             return AskResult(text=local_reply, source="local")
+
+        note_reply = self._handle_notes(user_input)
+        if note_reply is not None:
+            self._remember(user_input, note_reply)
+            return AskResult(text=note_reply, source="skill")
 
         for pattern, handler_name in _DIRECT_SKILLS:
             match = pattern.match(user_input)

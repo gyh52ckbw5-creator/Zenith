@@ -18,7 +18,8 @@ Komutlar:
 Yetenekler (dogrudan yaz):
   hesapla: 12*7        wiki: kuantum fizigi     hava: Istanbul
   kur: 100 dolar tl    ara: bugun ne oldu        ozetle: <url>
-  kullanici: <ad>      (bir kullanici adini populer sitelerde arar)
+  haber: ekonomi       sozluk: serendipity       sifre: 20
+  not: sut al          notlarim / not sil 1      kullanici: <ad>
 """
 
 

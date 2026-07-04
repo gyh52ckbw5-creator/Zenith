@@ -1,0 +1,41 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "zenith-assistant"
+version = "0.1.0"
+description = "Birden fazla ucretsiz/acik kaynak AI modelini birlikte calistiran kisisel asistan (Jarvis tarzi)."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "Zenith contributors" }]
+keywords = ["ai", "assistant", "llm", "ollama", "openrouter", "jarvis", "free"]
+dependencies = [
+    "litellm>=1.53.0",
+    "pyyaml>=6.0",
+    "python-dotenv>=1.0.1",
+    "fastapi>=0.115.0",
+    "uvicorn>=0.32.0",
+    "ddgs>=9.0",
+    "httpx>=0.27",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0", "pytest-asyncio>=0.23", "httpx>=0.27"]
+
+[project.scripts]
+zenith = "zenith.cli:main"
+zenith-web = "zenith.server:run"
+
+[project.urls]
+Homepage = "https://github.com/gyh52ckbw5-creator/Zenith"
+
+[tool.setuptools]
+packages = ["zenith"]
+
+[tool.setuptools.package-data]
+zenith = ["../config/models.yaml"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"

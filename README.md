@@ -28,8 +28,12 @@ Tek bir modele bağımlı kalmak yerine, Zenith şunları yapabilir:
   | `wiki:` | Wikipedia özeti getirir | `wiki: kuantum fiziği` |
   | `hava:` | Anlık hava durumu (open-meteo) | `hava: İstanbul` |
   | `kur:` | Döviz kuru çevirir (frankfurter) | `kur: 100 dolar tl` |
+  | `haber:` | Güncel haber başlıkları (Google News) | `haber: ekonomi` |
+  | `sozluk:` | İngilizce sözlük tanımı | `sozluk: serendipity` |
+  | `sifre:` | Güvenli rastgele şifre üretir (yerel) | `sifre: 20` |
   | `ozetle:` | Bir web sayfasını getirip özetletir | `ozetle: https://...` |
   | `kullanici:` | Sherlock tarzı: bir kullanıcı adını popüler sitelerde arar | `kullanici: torvalds` |
+  | `not:` / `notlarim` | Kalıcı notlar/hatırlatıcılar (ekle, listele, `not sil 1`) | `not: yarın faturayı öde` |
   | `hesapla:` | Yerel hesap makinesi | `hesapla: 12*7` |
 - **Sesli kullanım (web arayüzü)**: "Sesli oku" anahtarı cevapları Türkçe
   seslendirir; destekleyen tarayıcılarda mikrofon butonuyla konuşarak
