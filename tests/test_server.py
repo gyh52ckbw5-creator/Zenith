@@ -46,14 +46,19 @@ def test_models_endpoint_lists_configured_models():
 
 
 def test_chat_endpoint_uses_assistant(monkeypatch):
+    from zenith.assistant import AskResult
+
     async def fake_ask(self, message, **kwargs):
-        return f"echo: {message}"
+        return AskResult(text=f"echo: {message}", source="council", contributors=["a", "b"])
 
     monkeypatch.setattr(server.ZenithAssistant, "ask", fake_ask)
     client = TestClient(server.app)
     res = client.post("/api/chat", json={"message": "merhaba"})
     assert res.status_code == 200
-    assert res.json()["reply"] == "echo: merhaba"
+    data = res.json()
+    assert data["reply"] == "echo: merhaba"
+    assert data["source"] == "council"
+    assert data["contributors"] == ["a", "b"]
 
 
 def test_reset_endpoint_clears_memory(monkeypatch, tmp_path):

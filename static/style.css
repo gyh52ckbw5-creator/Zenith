@@ -119,6 +119,24 @@ button:active {
   border: 1px dashed var(--border);
 }
 
+.meta {
+  align-self: flex-start;
+  color: var(--muted);
+  font-size: 11px;
+  padding-left: 6px;
+}
+
+#mic-btn {
+  padding: 0 12px;
+  border-radius: 10px;
+  font-size: 18px;
+}
+
+#mic-btn.recording {
+  background: #b3403f;
+  border-color: #b3403f;
+}
+
 #chat-form {
   display: flex;
   gap: 8px;

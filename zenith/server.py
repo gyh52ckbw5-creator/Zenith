@@ -41,6 +41,8 @@ class ChatRequest(BaseModel):
 class ChatResponse(BaseModel):
     reply: str
     council: bool
+    source: str = "model"
+    contributors: list[str] = []
 
 
 @app.get("/api/health")
@@ -69,10 +71,15 @@ async def chat(payload: ChatRequest) -> ChatResponse:
     async with _lock:
         _assistant.council_mode = payload.council
         try:
-            reply = await _assistant.ask(payload.message)
+            result = await _assistant.ask(payload.message)
         except NoAvailableModelError as exc:
-            reply = f"[hata] {exc}"
-    return ChatResponse(reply=reply, council=payload.council)
+            return ChatResponse(reply=f"[hata] {exc}", council=payload.council, source="error")
+    return ChatResponse(
+        reply=result.text,
+        council=payload.council,
+        source=result.source,
+        contributors=result.contributors,
+    )
 
 
 @app.post("/api/reset")

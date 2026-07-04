@@ -26,7 +26,11 @@
       <div class="controls">
         <label class="switch">
           <input type="checkbox" id="council-toggle" />
-          <span>Konsey modu</span>
+          <span>Konsey</span>
+        </label>
+        <label class="switch">
+          <input type="checkbox" id="tts-toggle" />
+          <span>Sesli oku</span>
         </label>
         <button id="reset-btn" title="Hafizayi temizle">Sifirla</button>
         <button id="models-btn" title="Modelleri listele">Modeller</button>
@@ -36,7 +40,8 @@
     <main id="chat"></main>
 
     <form id="chat-form">
-      <textarea id="chat-input" placeholder="Zenith'e bir sey sor..." rows="1" autofocus></textarea>
+      <textarea id="chat-input" placeholder="Zenith'e bir sey sor... (web icin: ara: sorgu)" rows="1" autofocus></textarea>
+      <button type="button" id="mic-btn" title="Sesle yaz" hidden>&#127908;</button>
       <button type="submit" id="send-btn">Gonder</button>
     </form>
   </div>

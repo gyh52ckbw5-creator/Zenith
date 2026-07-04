@@ -19,6 +19,12 @@ Tek bir modele bağımlı kalmak yerine, Zenith şunları yapabilir:
   sonraki oturumda kaldığın yerden devam edersin.
 - **Yerel araçlar**: Basit hesaplama (`hesapla: 12*7`) ve saat sorgusu gibi
   komutlar hiç bir modele gitmeden yerel olarak cevaplanır.
+- **Web araması (`ara: <sorgu>`)**: DuckDuckGo üzerinden ücretsiz (anahtarsız)
+  arama yapar, bulguları modele verip kaynak numaralı, güncel bir cevap
+  ürettirir. Örn: `ara: bugün dolar kuru`.
+- **Sesli kullanım (web arayüzü)**: "Sesli oku" anahtarı cevapları Türkçe
+  seslendirir; destekleyen tarayıcılarda mikrofon butonuyla konuşarak
+  yazdırabilirsin (iOS'ta klavyedeki dikte tuşu da her zaman çalışır).
 
 ## Mimari
 
@@ -30,6 +36,7 @@ zenith/
   council.py      # konsey modu: paralel sorgu + sentez
   memory.py       # dosya tabanlı konuşma hafızası
   tools.py        # yerel, LLM'siz komutlar (hesap makinesi, saat)
+  websearch.py    # ücretsiz DuckDuckGo web araması ("ara: <sorgu>")
   assistant.py    # hepsini birleştiren ZenithAssistant sınıfı
   cli.py          # interaktif terminal arayüzü
   server.py       # FastAPI web/API katmanı (telefon/iOS icin)

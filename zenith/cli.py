@@ -47,12 +47,15 @@ async def _run() -> None:
             continue
 
         try:
-            answer = await assistant.ask(user_input)
+            result = await assistant.ask(user_input)
         except NoAvailableModelError as exc:
             print(f"[hata] {exc}")
             continue
 
-        print(f"zenith> {answer}\n")
+        print(f"zenith> {result.text}")
+        if result.source == "council" and result.contributors:
+            print(f"        (konsey: {', '.join(result.contributors)})")
+        print()
 
 
 def main() -> None:
