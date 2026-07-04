@@ -14,6 +14,11 @@ Komutlar:
   /models    - yapilandirilmis modelleri ve durumlarini listele
   /reset     - konusma hafizasini temizle
   /exit      - cikis
+
+Yetenekler (dogrudan yaz):
+  hesapla: 12*7        wiki: kuantum fizigi     hava: Istanbul
+  kur: 100 dolar tl    ara: bugun ne oldu        ozetle: <url>
+  kullanici: <ad>      (bir kullanici adini populer sitelerde arar)
 """
 
 

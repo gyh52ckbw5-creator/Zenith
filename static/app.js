@@ -122,6 +122,8 @@ form.addEventListener("submit", async (event) => {
       meta = `konsey: ${data.contributors.length} model birlikte cevapladi`;
     } else if (data.source === "search") {
       meta = "web aramasiyla cevaplandi";
+    } else if (data.source === "summary") {
+      meta = "sayfa ozetlendi";
     } else if (data.source === "model" && data.contributors?.length) {
       meta = data.contributors[0];
     }

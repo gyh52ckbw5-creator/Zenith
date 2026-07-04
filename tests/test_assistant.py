@@ -69,6 +69,45 @@ async def test_search_command_feeds_results_to_model(tmp_path, monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_skill_command_answers_directly(tmp_path, monkeypatch):
+    zen = make_assistant(tmp_path)
+
+    async def fake_weather(city):
+        return f"{city} icin hava: gunesli"
+
+    monkeypatch.setattr(assistant_module.skills, "weather", fake_weather)
+
+    result = await zen.ask("hava: Bursa")
+    assert result.source == "skill"
+    assert "gunesli" in result.text
+    # Skill cevabi hafizaya yazilir.
+    assert zen.memory.messages[-1]["content"] == result.text
+
+
+@pytest.mark.asyncio
+async def test_summarize_command_feeds_page_to_model(tmp_path, monkeypatch):
+    zen = make_assistant(tmp_path)
+    captured = {}
+
+    async def fake_fetch(url, max_chars=6000):
+        captured["url"] = url
+        return "sayfa metni burada"
+
+    async def fake_router_ask(config, messages, tags=(), preferred=None):
+        captured["prompt"] = messages[-1]["content"]
+        return ModelReply("m1", "p/m1", "ozet cevabi")
+
+    monkeypatch.setattr(assistant_module.skills, "fetch_page_text", fake_fetch)
+    monkeypatch.setattr(assistant_module.router, "ask", fake_router_ask)
+
+    result = await zen.ask("ozetle: https://ornek.com")
+    assert result.source == "summary"
+    assert result.text == "ozet cevabi"
+    assert captured["url"] == "https://ornek.com"
+    assert "sayfa metni burada" in captured["prompt"]
+
+
+@pytest.mark.asyncio
 async def test_model_and_system_overrides_are_passed_through(tmp_path, monkeypatch):
     zen = make_assistant(tmp_path)
     captured = {}

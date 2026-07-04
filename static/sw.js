@@ -2,7 +2,7 @@
 // iOS'ta "Ana Ekrana Ekle" ile acilan uygulama daha hizli yuklenir.
 // Sohbet API'si (/api/*) her zaman aga gider, cache'lenmez.
 
-const CACHE_NAME = "zenith-static-v2";
+const CACHE_NAME = "zenith-static-v3";
 const STATIC_ASSETS = [
   "/",
   "/static/style.css",

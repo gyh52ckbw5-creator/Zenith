@@ -7,7 +7,7 @@ import os
 import re
 from dataclasses import dataclass, field
 
-from . import council, router, tools, websearch
+from . import council, router, skills, tools, websearch
 from .config import ZenithConfig, load_config
 from .memory import ConversationMemory
 
@@ -39,13 +39,34 @@ SEARCH_ANSWER_PROMPT = (
     "[1], [2] gibi numaralarla belirt. Sonuclar yetersizse bunu soyle."
 )
 
+SUMMARIZE_PROMPT = (
+    "Asagida bir web sayfasindan cikarilan metin var. Bu icerigi Turkce, "
+    "kisa ve anlasilir sekilde ozetle; onemli noktalari maddeler halinde ver."
+)
+
+# Dogrudan bir cevap ureten (modele gitmeyen) yetenek komutlari.
+# Her desen tek bir argumani yakalar; eslesirse skills modulundeki ilgili
+# fonksiyon CAGRI ANINDA (isimle) cozulur - boylece test/monkeypatch calisir.
+_DIRECT_SKILLS = [
+    (re.compile(r"^\s*(?:wiki|vikipedi)\s*[:=]\s*(.+)$", re.IGNORECASE), "wikipedia"),
+    (re.compile(r"^\s*(?:hava|weather)\s*[:=]\s*(.+)$", re.IGNORECASE), "weather"),
+    (re.compile(r"^\s*(?:kur|doviz|currency)\s*[:=]\s*(.+)$", re.IGNORECASE), "currency"),
+    (
+        re.compile(r"^\s*(?:kullanici|kullanıcı|sherlock|username)\s*[:=]\s*(.+)$", re.IGNORECASE),
+        "username_search",
+    ),
+]
+
+SUMMARIZE_PATTERN = re.compile(r"^\s*(?:ozetle|özetle|summarize)\s*[:=]\s*(\S+)\s*$", re.IGNORECASE)
+
 
 @dataclass
 class AskResult:
     """Bir sorunun cevabi + nasil uretildigine dair meta bilgi."""
 
     text: str
-    source: str = "model"  # "local" | "model" | "council" | "search"
+    # "local" | "model" | "council" | "search" | "skill" | "summary"
+    source: str = "model"
     contributors: list[str] = field(default_factory=list)
 
 
@@ -72,6 +93,20 @@ class ZenithAssistant:
         if local_reply is not None:
             self._remember(user_input, local_reply)
             return AskResult(text=local_reply, source="local")
+
+        for pattern, handler_name in _DIRECT_SKILLS:
+            match = pattern.match(user_input)
+            if match:
+                handler = getattr(skills, handler_name)
+                reply = await handler(match.group(1).strip())
+                self._remember(user_input, reply)
+                return AskResult(text=reply, source="skill")
+
+        summarize_match = SUMMARIZE_PATTERN.match(user_input)
+        if summarize_match:
+            return await self._ask_with_summary(
+                user_input, summarize_match.group(1), tags, model, system
+            )
 
         search_match = SEARCH_PATTERN.match(user_input)
         if search_match:
@@ -124,6 +159,37 @@ class ZenithAssistant:
         }
         result = await self._ask_models(messages, tags, model)
         result.source = "search"
+        self.memory.add("assistant", result.text)
+        return result
+
+    async def _ask_with_summary(
+        self,
+        user_input: str,
+        url: str,
+        tags: tuple[str, ...],
+        model: str | None = None,
+        system: str | None = None,
+    ) -> AskResult:
+        try:
+            page_text = await skills.fetch_page_text(url)
+        except skills.SkillError as exc:
+            text = f"[ozetleme hatasi] {exc}"
+            self._remember(user_input, text)
+            return AskResult(text=text, source="summary")
+
+        if not page_text.strip():
+            text = "Sayfadan metin cikarilamadi (bos ya da JS ile yuklenen icerik)."
+            self._remember(user_input, text)
+            return AskResult(text=text, source="summary")
+
+        self.memory.add("user", user_input)
+        messages = self.memory.as_messages(system or system_prompt())
+        messages[-1] = {
+            "role": "user",
+            "content": f"{SUMMARIZE_PROMPT}\n\nKaynak: {url}\n\nSayfa metni:\n{page_text}",
+        }
+        result = await self._ask_models(messages, tags, model)
+        result.source = "summary"
         self.memory.add("assistant", result.text)
         return result
 
