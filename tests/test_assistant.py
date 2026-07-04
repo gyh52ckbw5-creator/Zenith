@@ -125,6 +125,69 @@ async def test_model_and_system_overrides_are_passed_through(tmp_path, monkeypat
 
 
 @pytest.mark.asyncio
+async def test_history_mode_builds_context_and_skips_memory(tmp_path, monkeypatch):
+    zen = make_assistant(tmp_path)
+    captured = {}
+
+    async def fake_router_ask(config, messages, tags=(), preferred=None):
+        captured["messages"] = messages
+        return ModelReply("m1", "p/m1", "cevap")
+
+    monkeypatch.setattr(assistant_module.router, "ask", fake_router_ask)
+
+    history = [
+        {"role": "user", "content": "onceki soru"},
+        {"role": "assistant", "content": "onceki cevap"},
+    ]
+    result = await zen.ask("yeni soru", history=history)
+    assert result.text == "cevap"
+    # Baglamda system + gecmis + yeni soru olmali.
+    roles = [m["role"] for m in captured["messages"]]
+    assert roles == ["system", "user", "assistant", "user"]
+    assert captured["messages"][-1]["content"] == "yeni soru"
+    # history modunda paylasilan hafiza kirletilmez.
+    assert zen.memory.messages == []
+
+
+@pytest.mark.asyncio
+async def test_image_routes_to_vision_and_builds_multimodal(tmp_path, monkeypatch):
+    zen = make_assistant(tmp_path)
+    captured = {}
+
+    async def fake_router_ask(config, messages, tags=(), preferred=None):
+        captured["tags"] = tags
+        captured["content"] = messages[-1]["content"]
+        return ModelReply("m1", "p/m1", "gorselde bir kedi var")
+
+    monkeypatch.setattr(assistant_module.router, "ask", fake_router_ask)
+
+    data_url = "data:image/png;base64,AAAA"
+    result = await zen.ask("bu ne?", history=[], image=data_url)
+    assert "vision" in captured["tags"]
+    # Cok-modlu icerik: metin + gorsel parcalari.
+    parts = captured["content"]
+    assert isinstance(parts, list)
+    assert any(p["type"] == "image_url" for p in parts)
+    assert any(p["type"] == "text" for p in parts)
+    assert result.text == "gorselde bir kedi var"
+
+
+@pytest.mark.asyncio
+async def test_image_bypasses_text_commands(tmp_path, monkeypatch):
+    zen = make_assistant(tmp_path)
+
+    async def fake_router_ask(config, messages, tags=(), preferred=None):
+        return ModelReply("m1", "p/m1", "model gordu")
+
+    monkeypatch.setattr(assistant_module.router, "ask", fake_router_ask)
+
+    # "hesapla:" normalde yerel araca gider; gorsel varsa modele gitmeli.
+    result = await zen.ask("hesapla: 2+2", history=[], image="data:image/png;base64,AAAA")
+    assert result.source == "model"
+    assert result.text == "model gordu"
+
+
+@pytest.mark.asyncio
 async def test_search_failure_is_graceful(tmp_path, monkeypatch):
     zen = make_assistant(tmp_path)
 

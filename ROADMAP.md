@@ -39,10 +39,13 @@ işaretler.
 - [x] Kalıcı geçmiş + sohbet dışa aktarma
 - [x] Açık/koyu tema
 
-## Faz 5 — Sıradaki fikirler (planlanıyor)
-- [ ] Çoklu sohbet oturumları (kenar çubuğu, oturumlar arası geçiş)
+## Faz 5 — Gelişmiş deneyim (tamamlandı)
+- [x] Çoklu sohbet oturumları (kenar çubuğu, oturumlar arası geçiş)
+- [x] Görsel yükleme + vision modelleriyle analiz
+- [x] Sesli konuşma modu (eller-serbest, kesintisiz döngü)
+
+## Faz 6 — Sıradaki fikirler (planlanıyor)
 - [ ] Gerçek fonksiyon çağırma (function calling) katmanı
-- [ ] Dosya/görsel yükleme + vision modelleriyle analiz
 - [ ] Uzun süreli hafıza (kullanıcı tercihleri/profili)
 - [ ] Web Push ile hatırlatıcı bildirimleri
 - [ ] Kod çalıştırma (güvenli sandbox)

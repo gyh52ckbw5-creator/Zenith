@@ -20,9 +20,19 @@
   <link rel="stylesheet" href="/static/style.css" />
 </head>
 <body>
+  <div id="sidebar-overlay" hidden></div>
+  <aside id="sidebar" hidden>
+    <div class="sidebar-head">
+      <span>Sohbetler</span>
+      <button id="new-chat-btn" title="Yeni sohbet">+ Yeni</button>
+    </div>
+    <div id="conversation-list"></div>
+  </aside>
+
   <div id="app">
     <header>
       <div class="brand">
+        <button id="menu-btn" title="Sohbetler" aria-label="Sohbetler">&#9776;</button>
         <span class="logo">Z</span>
         <h1>Zenith</h1>
       </div>
@@ -39,7 +49,6 @@
           <option value="">Oto model</option>
         </select>
         <button id="export-btn" title="Sohbeti indir">&#8681;</button>
-        <button id="reset-btn" title="Yeni sohbet">Yeni</button>
       </div>
     </header>
 
@@ -61,9 +70,17 @@
       </div>
     </main>
 
+    <div id="image-preview" hidden>
+      <img id="image-thumb" alt="secilen gorsel" />
+      <button id="image-remove" title="Gorseli kaldir">&times;</button>
+    </div>
+
     <form id="chat-form">
+      <input type="file" id="image-input" accept="image/*" hidden />
+      <button type="button" id="attach-btn" title="Gorsel ekle">&#128206;</button>
       <textarea id="chat-input" placeholder="Zenith'e bir sey sor..." rows="1" autofocus></textarea>
       <button type="button" id="mic-btn" title="Sesle yaz" hidden>&#127908;</button>
+      <button type="button" id="voice-btn" title="Sesli konusma modu" hidden>&#128266;</button>
       <button type="submit" id="send-btn" title="Gonder">&#10148;</button>
     </form>
   </div>

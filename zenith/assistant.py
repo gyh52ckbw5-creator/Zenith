@@ -125,16 +125,20 @@ class ZenithAssistant:
         tags: tuple[str, ...] = (),
         model: str | None = None,
         system: str | None = None,
+        history: list[dict] | None = None,
+        image: str | None = None,
     ) -> AskResult:
-        result = await self._resolve_non_streaming(user_input, tags, model, system)
+        result = await self._resolve_non_streaming(
+            user_input, tags, model, system, history, image
+        )
         if result is not None:
             return result
 
         # Duz model yolu (konsey degil): tek seferde topla.
-        self.memory.add("user", user_input)
-        messages = self.memory.as_messages(system or system_prompt())
-        reply = await router.ask(self.config, messages, tags=tags, preferred=model)
-        self.memory.add("assistant", reply.content)
+        use_tags = tags + ("vision",) if image else tags
+        messages = self._compose(user_input, system, history, image)
+        reply = await router.ask(self.config, messages, tags=use_tags, preferred=model)
+        self._persist_reply(history, reply.content)
         return AskResult(text=reply.content, source="model", contributors=[reply.model_name])
 
     async def ask_stream(
@@ -144,24 +148,28 @@ class ZenithAssistant:
         tags: tuple[str, ...] = (),
         model: str | None = None,
         system: str | None = None,
+        history: list[dict] | None = None,
+        image: str | None = None,
     ):
         """`ask` ile ayni yollari izler; duz model yolunda cevabi token token
         akitir. Her adimda bir olay sozlugu uretir:
           {"type":"delta","text":...} | {"type":"meta",...} | {"type":"done"}
         """
-        result = await self._resolve_non_streaming(user_input, tags, model, system)
+        result = await self._resolve_non_streaming(
+            user_input, tags, model, system, history, image
+        )
         if result is not None:
             yield {"type": "delta", "text": result.text}
             yield {"type": "meta", "source": result.source, "contributors": result.contributors}
             yield {"type": "done"}
             return
 
-        self.memory.add("user", user_input)
-        messages = self.memory.as_messages(system or system_prompt())
+        use_tags = tags + ("vision",) if image else tags
+        messages = self._compose(user_input, system, history, image)
         chunks: list[str] = []
         model_name: str | None = None
         async for kind, value in router.ask_stream(
-            self.config, messages, tags=tags, preferred=model
+            self.config, messages, tags=use_tags, preferred=model
         ):
             if kind == "model":
                 model_name = value
@@ -170,7 +178,7 @@ class ZenithAssistant:
                 yield {"type": "delta", "text": value}
 
         text = "".join(chunks).strip()
-        self.memory.add("assistant", text)
+        self._persist_reply(history, text)
         yield {
             "type": "meta",
             "source": "model",
@@ -178,19 +186,61 @@ class ZenithAssistant:
         }
         yield {"type": "done"}
 
+    def _compose(
+        self, user_input: str, system: str | None, history: list[dict] | None, image: str | None
+    ) -> list[dict]:
+        """Model'e gidecek mesaj listesini kurar.
+
+        history verilirse (web/coklu-oturum): [system] + history + [kullanici];
+        hafizaya YAZMAZ (istemci her oturumu kendi saklar).
+        history yoksa (CLI): paylasilan hafizayi kullanir ve kullaniciyi ekler.
+        image varsa kullanici mesaji cok-modlu (metin + gorsel) olur.
+        """
+        sys = system or system_prompt()
+        content: object = user_input
+        if image:
+            content = [
+                {"type": "text", "text": user_input or "Bu gorseli acikla."},
+                {"type": "image_url", "image_url": {"url": image}},
+            ]
+        if history is not None:
+            return [{"role": "system", "content": sys}, *history, {"role": "user", "content": content}]
+
+        self.memory.add("user", user_input)
+        messages = self.memory.as_messages(sys)
+        if image:
+            messages[-1] = {"role": "user", "content": content}
+        return messages
+
+    def _persist_reply(self, history: list[dict] | None, reply: str) -> None:
+        if history is None:
+            self.memory.add("assistant", reply)
+
     async def _resolve_non_streaming(
-        self, user_input: str, tags: tuple[str, ...], model: str | None, system: str | None
+        self,
+        user_input: str,
+        tags: tuple[str, ...],
+        model: str | None,
+        system: str | None,
+        history: list[dict] | None = None,
+        image: str | None = None,
     ) -> AskResult | None:
         """Akitilamayan (tam sonuc donen) yollari isler: yerel arac, yetenek,
-        ozetleme, arama, konsey. Duz model yolu icin None doner (akitilacak)."""
+        ozetleme, arama, konsey. Duz model yolu icin None doner (akitilacak).
+
+        Gorsel varsa tum metin-komut yollari atlanir; dogrudan vision modeline gider.
+        """
+        if image:
+            return None
+
         local_reply = tools.try_handle_locally(user_input)
         if local_reply is not None:
-            self._remember(user_input, local_reply)
+            self._remember(user_input, local_reply, history)
             return AskResult(text=local_reply, source="local")
 
         note_reply = self._handle_notes(user_input)
         if note_reply is not None:
-            self._remember(user_input, note_reply)
+            self._remember(user_input, note_reply, history)
             return AskResult(text=note_reply, source="skill")
 
         for pattern, handler_name in _DIRECT_SKILLS:
@@ -198,26 +248,25 @@ class ZenithAssistant:
             if match:
                 handler = getattr(skills, handler_name)
                 reply = await handler(match.group(1).strip())
-                self._remember(user_input, reply)
+                self._remember(user_input, reply, history)
                 return AskResult(text=reply, source="skill")
 
         summarize_match = SUMMARIZE_PATTERN.match(user_input)
         if summarize_match:
             return await self._ask_with_summary(
-                user_input, summarize_match.group(1), tags, model, system
+                user_input, summarize_match.group(1), tags, model, system, history
             )
 
         search_match = SEARCH_PATTERN.match(user_input)
         if search_match:
             return await self._ask_with_search(
-                user_input, search_match.group(1), tags, model, system
+                user_input, search_match.group(1), tags, model, system, history
             )
 
         if self.council_mode:
-            self.memory.add("user", user_input)
-            messages = self.memory.as_messages(system or system_prompt())
+            messages = self._compose(user_input, system, history, None)
             result = await self._ask_models(messages, tags, model)
-            self.memory.add("assistant", result.text)
+            self._persist_reply(history, result.text)
             return result
 
         return None
@@ -235,6 +284,20 @@ class ZenithAssistant:
         reply = await router.ask(self.config, messages, tags=tags, preferred=model)
         return AskResult(text=reply.content, source="model", contributors=[reply.model_name])
 
+    def _context_with_prompt(
+        self, user_input: str, system: str | None, history: list[dict] | None, prompt: str
+    ) -> list[dict]:
+        """Bir gecici 'prompt' (arama/ozet baglami) iceren kullanici mesajiyla
+        birlikte model'e gidecek mesaj listesini kurar. Ham baglam hafizaya
+        yazilmaz; memory modunda gercek kullanici girdisi ayrica saklanir."""
+        sys = system or system_prompt()
+        if history is not None:
+            return [{"role": "system", "content": sys}, *history, {"role": "user", "content": prompt}]
+        self.memory.add("user", user_input)
+        messages = self.memory.as_messages(sys)
+        messages[-1] = {"role": "user", "content": prompt}
+        return messages
+
     async def _ask_with_search(
         self,
         user_input: str,
@@ -242,26 +305,21 @@ class ZenithAssistant:
         tags: tuple[str, ...],
         model: str | None = None,
         system: str | None = None,
+        history: list[dict] | None = None,
     ) -> AskResult:
         try:
             results = await websearch.search(query)
         except websearch.SearchError as exc:
             text = f"[arama hatasi] {exc}"
-            self._remember(user_input, text)
+            self._remember(user_input, text, history)
             return AskResult(text=text, source="search")
 
         findings = websearch.format_results(results)
-        self.memory.add("user", user_input)
-        messages = self.memory.as_messages(system or system_prompt())
-        # Arama sonuclarini yalnizca bu soruya eklenen gecici baglam olarak ver;
-        # hafizaya ham sonuclar degil, kullanici sorusu + nihai cevap yazilir.
-        messages[-1] = {
-            "role": "user",
-            "content": f"{SEARCH_ANSWER_PROMPT}\n\nSorgu: {query}\n\nArama sonuclari:\n{findings}",
-        }
+        prompt = f"{SEARCH_ANSWER_PROMPT}\n\nSorgu: {query}\n\nArama sonuclari:\n{findings}"
+        messages = self._context_with_prompt(user_input, system, history, prompt)
         result = await self._ask_models(messages, tags, model)
         result.source = "search"
-        self.memory.add("assistant", result.text)
+        self._persist_reply(history, result.text)
         return result
 
     async def _ask_with_summary(
@@ -271,33 +329,31 @@ class ZenithAssistant:
         tags: tuple[str, ...],
         model: str | None = None,
         system: str | None = None,
+        history: list[dict] | None = None,
     ) -> AskResult:
         try:
             page_text = await skills.fetch_page_text(url)
         except skills.SkillError as exc:
             text = f"[ozetleme hatasi] {exc}"
-            self._remember(user_input, text)
+            self._remember(user_input, text, history)
             return AskResult(text=text, source="summary")
 
         if not page_text.strip():
             text = "Sayfadan metin cikarilamadi (bos ya da JS ile yuklenen icerik)."
-            self._remember(user_input, text)
+            self._remember(user_input, text, history)
             return AskResult(text=text, source="summary")
 
-        self.memory.add("user", user_input)
-        messages = self.memory.as_messages(system or system_prompt())
-        messages[-1] = {
-            "role": "user",
-            "content": f"{SUMMARIZE_PROMPT}\n\nKaynak: {url}\n\nSayfa metni:\n{page_text}",
-        }
+        prompt = f"{SUMMARIZE_PROMPT}\n\nKaynak: {url}\n\nSayfa metni:\n{page_text}"
+        messages = self._context_with_prompt(user_input, system, history, prompt)
         result = await self._ask_models(messages, tags, model)
         result.source = "summary"
-        self.memory.add("assistant", result.text)
+        self._persist_reply(history, result.text)
         return result
 
-    def _remember(self, user_input: str, reply: str) -> None:
-        self.memory.add("user", user_input)
-        self.memory.add("assistant", reply)
+    def _remember(self, user_input: str, reply: str, history: list[dict] | None = None) -> None:
+        if history is None:
+            self.memory.add("user", user_input)
+            self.memory.add("assistant", reply)
 
     def list_models(self) -> list[str]:
         lines = []

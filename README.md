@@ -43,6 +43,16 @@ Tek bir modele bağımlı kalmak yerine, Zenith şunları yapabilir:
   olarak sıradaki modele geçilir. (Yerel/Docker kurulumda anlık akar;
   bazı serverless platformlar yanıtı tamponlayıp tek seferde gösterebilir —
   işlevsel olarak aynıdır.)
+- **Çoklu sohbet oturumları**: Soldaki menüden (☰) birden fazla ayrı sohbet
+  aç, aralarında geç, sil. Her oturum kendi geçmişini telefonunda saklar ve
+  her istekte bağlam olarak gönderilir (sunucu durumsuz çalışır, serverless'a
+  uygun).
+- **Görsel yükleme + vision**: Ataç (📎) ile fotoğraf ekle, "bu ne?" diye sor.
+  İstek otomatik olarak vision destekli bir modele (Llama 4, Gemini, GPT-4o-mini,
+  Gemma 3) yönlendirilir.
+- **Sesli konuşma modu**: 🔊 düğmesiyle eller-serbest Jarvis: mikrofona konuş,
+  Zenith sesle cevaplasın, cevap bitince otomatik tekrar dinlesin — kesintisiz
+  döngü (destekleyen tarayıcılarda).
 - **Cilalı sohbet arayüzü** (Open WebUI / LibreChat / Lobe Chat'ten ilhamla):
   hoş geldin ekranı ve tek dokunuşla dolduran öneri çipleri, markdown
   görüntüleme (kod blokları, listeler, linkler), her cevapta kopyala butonu,

@@ -34,11 +34,20 @@ _assistant = ZenithAssistant()
 _lock = asyncio.Lock()  # tek kullanicilik asistan: hafizada yaris durumunu onler
 
 
+class ChatMessage(BaseModel):
+    role: str
+    content: str
+
+
 class ChatRequest(BaseModel):
     message: str
     council: bool = False
     model: str | None = None  # arayuzden secilen model (bos = otomatik)
     system: str | None = None  # istege bagli kisilik/system prompt override
+    # Coklu sohbet: istemci o oturumun gecmisini gonderir (sunucu her oturumu
+    # kendi tutmaz). Verilirse baglam bundan kurulur, paylasilan hafiza kullanilmaz.
+    history: list[ChatMessage] | None = None
+    image: str | None = None  # cok-modlu: data: URL olarak gorsel (vision)
 
 
 class ChatResponse(BaseModel):
@@ -84,13 +93,23 @@ async def list_models() -> dict:
     }
 
 
+def _history_payload(payload: ChatRequest) -> list[dict] | None:
+    if payload.history is None:
+        return None
+    return [{"role": m.role, "content": m.content} for m in payload.history]
+
+
 @app.post("/api/chat", response_model=ChatResponse)
 async def chat(payload: ChatRequest) -> ChatResponse:
     async with _lock:
         _assistant.council_mode = payload.council
         try:
             result = await _assistant.ask(
-                payload.message, model=payload.model, system=payload.system
+                payload.message,
+                model=payload.model,
+                system=payload.system,
+                history=_history_payload(payload),
+                image=payload.image,
             )
         except NoAvailableModelError as exc:
             return ChatResponse(reply=f"[hata] {exc}", council=payload.council, source="error")
@@ -115,7 +134,11 @@ async def chat_stream(payload: ChatRequest) -> StreamingResponse:
         try:
             _assistant.council_mode = payload.council
             async for event in _assistant.ask_stream(
-                payload.message, model=payload.model, system=payload.system
+                payload.message,
+                model=payload.model,
+                system=payload.system,
+                history=_history_payload(payload),
+                image=payload.image,
             ):
                 yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
         except NoAvailableModelError as exc:
