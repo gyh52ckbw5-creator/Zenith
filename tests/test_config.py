@@ -10,11 +10,28 @@ def test_load_config_reads_all_models():
     assert "ollama-llama3.1-8b" in names
 
 
-def test_ollama_models_always_available():
+def test_ollama_models_always_available(monkeypatch):
+    monkeypatch.delenv("VERCEL", raising=False)
+    monkeypatch.delenv("ZENITH_DISABLE_OLLAMA", raising=False)
     config = load_config()
     ollama_models = [m for m in config.models if m.provider == "ollama"]
     assert ollama_models
     assert all(m.is_available() for m in ollama_models)
+
+
+def test_ollama_disabled_in_serverless_env(monkeypatch):
+    monkeypatch.setenv("VERCEL", "1")
+    config = load_config()
+    ollama_models = [m for m in config.models if m.provider == "ollama"]
+    assert all(not m.is_available() for m in ollama_models)
+
+
+def test_ollama_disabled_via_flag(monkeypatch):
+    monkeypatch.delenv("VERCEL", raising=False)
+    monkeypatch.setenv("ZENITH_DISABLE_OLLAMA", "1")
+    config = load_config()
+    ollama_models = [m for m in config.models if m.provider == "ollama"]
+    assert all(not m.is_available() for m in ollama_models)
 
 
 def test_key_gated_model_unavailable_without_env(monkeypatch):

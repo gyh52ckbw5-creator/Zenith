@@ -22,6 +22,11 @@ class ModelSpec:
     priority: int = 100
 
     def is_available(self) -> bool:
+        if self.provider == "ollama":
+            # Serverless ortamlarda (Vercel vb.) localhost'ta Ollama olamaz;
+            # ZENITH_DISABLE_OLLAMA ile de elle kapatilabilir.
+            if os.environ.get("VERCEL") or os.environ.get("ZENITH_DISABLE_OLLAMA"):
+                return False
         if self.requires_key is None:
             return True
         return bool(os.environ.get(self.requires_key))

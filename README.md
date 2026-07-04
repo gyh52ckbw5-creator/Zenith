@@ -120,6 +120,28 @@ Bu arayüz `/council` moduna karşılık gelen bir anahtar (Konsey modu),
 hafızayı sıfırlama ve model durumunu listeleme butonları içerir — CLI'daki
 tüm komutların mobil karşılığıdır.
 
+## İnternete deploy etmek (telefondan her yerden erişim)
+
+Ev ağı dışından da kullanmak istersen iki hazır yol var:
+
+**Vercel (ücretsiz):** Repo'da `vercel.json` + `api/index.py` hazır.
+Vercel hesabını GitHub'a bağlayıp bu repo'yu import etmen yeterli. Deploy
+sonrası Vercel panelinden **Settings → Environment Variables** kısmına en az
+bir ücretsiz API anahtarı ekle (örn. `GROQ_API_KEY`) — serverless ortamda
+yerel Ollama olmadığı için anahtar şart. Hafıza serverless'ta geçicidir
+(cold start'ta sıfırlanır).
+
+**Docker (Render / Fly.io / Railway):** Repo'daki `Dockerfile` ile herhangi
+bir container hostunda kalıcı hafızayla çalışır:
+
+```bash
+docker build -t zenith .
+docker run -p 8000:8000 --env-file .env zenith
+```
+
+Deploy ettikten sonra çıkan `https://...` adresini iPhone'da Safari ile açıp
+**Paylaş → Ana Ekrana Ekle** demen yeterli.
+
 ## Yeni bir ücretsiz model eklemek
 
 `config/models.yaml` dosyasına yeni bir giriş eklemen yeterli:

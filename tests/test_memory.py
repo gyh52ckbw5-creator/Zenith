@@ -1,4 +1,6 @@
-from zenith.memory import ConversationMemory
+from pathlib import Path
+
+from zenith.memory import ConversationMemory, default_memory_path
 
 
 def test_memory_persists_and_reloads(tmp_path):
@@ -28,6 +30,18 @@ def test_memory_reset(tmp_path):
     mem.add("user", "hi")
     mem.reset()
     assert mem.messages == []
+
+
+def test_default_memory_path_respects_env_override(monkeypatch, tmp_path):
+    custom = tmp_path / "custom.json"
+    monkeypatch.setenv("ZENITH_MEMORY_PATH", str(custom))
+    assert default_memory_path() == custom
+
+
+def test_default_memory_path_uses_tmp_on_vercel(monkeypatch):
+    monkeypatch.delenv("ZENITH_MEMORY_PATH", raising=False)
+    monkeypatch.setenv("VERCEL", "1")
+    assert default_memory_path() == Path("/tmp/zenith-memory.json")
 
 
 def test_as_messages_prepends_system_prompt(tmp_path):

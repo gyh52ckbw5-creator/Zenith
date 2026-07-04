@@ -1,0 +1,12 @@
+.git
+.venv
+venv
+tests
+scripts
+requirements-dev.txt
+pytest.ini
+.github
+Dockerfile
+__pycache__
+*.pyc
+.env
