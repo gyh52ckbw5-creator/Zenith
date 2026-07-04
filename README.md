@@ -34,12 +34,18 @@ Tek bir modele bağımlı kalmak yerine, Zenith şunları yapabilir:
 - **Sesli kullanım (web arayüzü)**: "Sesli oku" anahtarı cevapları Türkçe
   seslendirir; destekleyen tarayıcılarda mikrofon butonuyla konuşarak
   yazdırabilirsin (iOS'ta klavyedeki dikte tuşu da her zaman çalışır).
-- **Zengin sohbet arayüzü** (Open WebUI / LibreChat'ten ilhamla): cevaplar
-  markdown olarak görüntülenir (kod blokları, listeler, linkler), üstteki
-  seçiciden belirli bir modeli seçebilirsin ("Oto model" = öncelik zinciri),
-  sohbet geçmişi telefonunda saklanır ve "Indir" ile markdown olarak
-  dışa aktarılır. `/api/chat` gövdesindeki `system` alanıyla istek başına
-  kişilik de değiştirilebilir.
+- **Canlı akan cevaplar (streaming)**: Cevaplar Jarvis gibi kelime kelime
+  yazılır (Server-Sent Events). Bir model akışın başında çökerse otomatik
+  olarak sıradaki modele geçilir. (Yerel/Docker kurulumda anlık akar;
+  bazı serverless platformlar yanıtı tamponlayıp tek seferde gösterebilir —
+  işlevsel olarak aynıdır.)
+- **Cilalı sohbet arayüzü** (Open WebUI / LibreChat / Lobe Chat'ten ilhamla):
+  hoş geldin ekranı ve tek dokunuşla dolduran öneri çipleri, markdown
+  görüntüleme (kod blokları, listeler, linkler), her cevapta kopyala butonu,
+  üstteki seçiciden model seçimi ("Oto model" = öncelik zinciri), telefonda
+  kalıcı geçmiş, "İndir" ile markdown dışa aktarma, açık/koyu tema. Enter ile
+  gönder / Shift+Enter ile yeni satır. `/api/chat` (veya `/api/chat/stream`)
+  gövdesindeki `system` alanıyla istek başına kişilik de değiştirilebilir.
 
 ## Mimari
 

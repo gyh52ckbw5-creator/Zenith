@@ -22,7 +22,10 @@
 <body>
   <div id="app">
     <header>
-      <h1>Zenith</h1>
+      <div class="brand">
+        <span class="logo">Z</span>
+        <h1>Zenith</h1>
+      </div>
       <div class="controls">
         <label class="switch">
           <input type="checkbox" id="council-toggle" />
@@ -30,22 +33,35 @@
         </label>
         <label class="switch">
           <input type="checkbox" id="tts-toggle" />
-          <span>Sesli oku</span>
+          <span>Sesli</span>
         </label>
         <select id="model-select" title="Model sec">
           <option value="">Oto model</option>
         </select>
-        <button id="export-btn" title="Sohbeti indir">Indir</button>
-        <button id="reset-btn" title="Hafizayi temizle">Sifirla</button>
+        <button id="export-btn" title="Sohbeti indir">&#8681;</button>
+        <button id="reset-btn" title="Yeni sohbet">Yeni</button>
       </div>
     </header>
 
-    <main id="chat"></main>
+    <main id="chat">
+      <div id="welcome">
+        <span class="welcome-logo">Z</span>
+        <h2>Merhaba, ben Zenith.</h2>
+        <p>Birden fazla ucretsiz yapay zeka modelini birlikte calistiran kisisel asistaniniz. Ne yapmami istersiniz, efendim?</p>
+        <div class="chips">
+          <button class="chip" data-fill="wiki: kara delik">Wikipedia&apos;dan ozet</button>
+          <button class="chip" data-fill="hava: Istanbul">Hava durumu</button>
+          <button class="chip" data-fill="kur: 100 dolar tl">Doviz kuru</button>
+          <button class="chip" data-fill="ara: bugun teknoloji haberleri">Web&apos;de ara</button>
+          <button class="chip" data-send="__council__">Konseye bir soru sor</button>
+        </div>
+      </div>
+    </main>
 
     <form id="chat-form">
-      <textarea id="chat-input" placeholder="Sor... (wiki: / hava: / kur: / ara: / ozetle: / kullanici:)" rows="1" autofocus></textarea>
+      <textarea id="chat-input" placeholder="Zenith'e bir sey sor..." rows="1" autofocus></textarea>
       <button type="button" id="mic-btn" title="Sesle yaz" hidden>&#127908;</button>
-      <button type="submit" id="send-btn">Gonder</button>
+      <button type="submit" id="send-btn" title="Gonder">&#10148;</button>
     </form>
   </div>
 

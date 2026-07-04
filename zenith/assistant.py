@@ -89,6 +89,63 @@ class ZenithAssistant:
         model: str | None = None,
         system: str | None = None,
     ) -> AskResult:
+        result = await self._resolve_non_streaming(user_input, tags, model, system)
+        if result is not None:
+            return result
+
+        # Duz model yolu (konsey degil): tek seferde topla.
+        self.memory.add("user", user_input)
+        messages = self.memory.as_messages(system or system_prompt())
+        reply = await router.ask(self.config, messages, tags=tags, preferred=model)
+        self.memory.add("assistant", reply.content)
+        return AskResult(text=reply.content, source="model", contributors=[reply.model_name])
+
+    async def ask_stream(
+        self,
+        user_input: str,
+        *,
+        tags: tuple[str, ...] = (),
+        model: str | None = None,
+        system: str | None = None,
+    ):
+        """`ask` ile ayni yollari izler; duz model yolunda cevabi token token
+        akitir. Her adimda bir olay sozlugu uretir:
+          {"type":"delta","text":...} | {"type":"meta",...} | {"type":"done"}
+        """
+        result = await self._resolve_non_streaming(user_input, tags, model, system)
+        if result is not None:
+            yield {"type": "delta", "text": result.text}
+            yield {"type": "meta", "source": result.source, "contributors": result.contributors}
+            yield {"type": "done"}
+            return
+
+        self.memory.add("user", user_input)
+        messages = self.memory.as_messages(system or system_prompt())
+        chunks: list[str] = []
+        model_name: str | None = None
+        async for kind, value in router.ask_stream(
+            self.config, messages, tags=tags, preferred=model
+        ):
+            if kind == "model":
+                model_name = value
+            else:
+                chunks.append(value)
+                yield {"type": "delta", "text": value}
+
+        text = "".join(chunks).strip()
+        self.memory.add("assistant", text)
+        yield {
+            "type": "meta",
+            "source": "model",
+            "contributors": [model_name] if model_name else [],
+        }
+        yield {"type": "done"}
+
+    async def _resolve_non_streaming(
+        self, user_input: str, tags: tuple[str, ...], model: str | None, system: str | None
+    ) -> AskResult | None:
+        """Akitilamayan (tam sonuc donen) yollari isler: yerel arac, yetenek,
+        ozetleme, arama, konsey. Duz model yolu icin None doner (akitilacak)."""
         local_reply = tools.try_handle_locally(user_input)
         if local_reply is not None:
             self._remember(user_input, local_reply)
@@ -114,11 +171,14 @@ class ZenithAssistant:
                 user_input, search_match.group(1), tags, model, system
             )
 
-        self.memory.add("user", user_input)
-        messages = self.memory.as_messages(system or system_prompt())
-        result = await self._ask_models(messages, tags, model)
-        self.memory.add("assistant", result.text)
-        return result
+        if self.council_mode:
+            self.memory.add("user", user_input)
+            messages = self.memory.as_messages(system or system_prompt())
+            result = await self._ask_models(messages, tags, model)
+            self.memory.add("assistant", result.text)
+            return result
+
+        return None
 
     async def _ask_models(
         self, messages: list[dict], tags: tuple[str, ...], model: str | None = None

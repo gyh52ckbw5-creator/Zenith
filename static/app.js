@@ -22,7 +22,6 @@ function escapeHtml(text) {
 function renderMarkdown(text) {
   const escaped = escapeHtml(text);
   const blocks = [];
-  // Kod bloklarini ayir ki iclerine baska kural uygulanmasin.
   let html = escaped.replace(/```([\s\S]*?)```/g, (_, code) => {
     blocks.push(`<pre><code>${code.replace(/^\w+\n/, "")}</code></pre>`);
     return `\u0000${blocks.length - 1}\u0000`;
@@ -52,21 +51,46 @@ function loadHistory() {
 function saveEntry(role, text, meta) {
   const history = loadHistory();
   history.push({ role, text, meta: meta || null, at: Date.now() });
-  // Telefonda sisirmemek icin son 200 mesaji tut.
   localStorage.setItem(HISTORY_KEY, JSON.stringify(history.slice(-200)));
 }
 
+function hideWelcome() {
+  document.getElementById("welcome")?.remove();
+}
+
+function scrollDown() {
+  chat.scrollTop = chat.scrollHeight;
+}
+
+function addCopyButton(bubble, getText) {
+  const btn = document.createElement("button");
+  btn.className = "copy-btn";
+  btn.textContent = "kopyala";
+  btn.addEventListener("click", async () => {
+    try {
+      await navigator.clipboard.writeText(getText());
+      btn.textContent = "kopyalandi";
+      setTimeout(() => (btn.textContent = "kopyala"), 1200);
+    } catch {
+      /* pano erisimi yoksa sessiz kal */
+    }
+  });
+  bubble.appendChild(btn);
+}
+
 function addBubble(role, text, { skipSave = false, meta = null } = {}) {
+  hideWelcome();
   const el = document.createElement("div");
   el.className = `bubble ${role}`;
   if (role === "assistant") {
     el.innerHTML = renderMarkdown(text);
+    addCopyButton(el, () => text);
   } else {
     el.textContent = text;
   }
   chat.appendChild(el);
   if (meta) addMeta(meta);
-  chat.scrollTop = chat.scrollHeight;
+  scrollDown();
   if (!skipSave && role !== "system") saveEntry(role, text, meta);
   return el;
 }
@@ -76,7 +100,7 @@ function addMeta(text) {
   el.className = "meta";
   el.textContent = text;
   chat.appendChild(el);
-  chat.scrollTop = chat.scrollHeight;
+  scrollDown();
 }
 
 function autoGrow() {
@@ -86,6 +110,14 @@ function autoGrow() {
 
 input.addEventListener("input", autoGrow);
 
+// Enter ile gonder, Shift+Enter ile yeni satir (masaustu rahatligi).
+input.addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
+    e.preventDefault();
+    form.requestSubmit();
+  }
+});
+
 function speak(text) {
   if (!ttsToggle.checked || !("speechSynthesis" in window)) return;
   speechSynthesis.cancel();
@@ -94,19 +126,38 @@ function speak(text) {
   speechSynthesis.speak(utterance);
 }
 
-form.addEventListener("submit", async (event) => {
-  event.preventDefault();
-  const message = input.value.trim();
-  if (!message) return;
+function metaFor(data) {
+  if (data.source === "council" && data.contributors?.length > 1) {
+    return `konsey: ${data.contributors.length} model birlikte cevapladi`;
+  }
+  if (data.source === "search") return "web aramasiyla cevaplandi";
+  if (data.source === "summary") return "sayfa ozetlendi";
+  if (data.source === "skill") return "yetenek";
+  if (data.source === "model" && data.contributors?.length) return data.contributors[0];
+  return null;
+}
+
+let busy = false;
+
+async function sendMessage(message) {
+  if (busy || !message) return;
+  busy = true;
 
   addBubble("user", message);
   input.value = "";
   autoGrow();
 
-  const thinking = addBubble("assistant", "...", { skipSave: true });
+  hideWelcome();
+  const bubble = document.createElement("div");
+  bubble.className = "bubble assistant streaming";
+  chat.appendChild(bubble);
+  scrollDown();
+
+  let full = "";
+  let meta = null;
 
   try {
-    const res = await fetch("/api/chat", {
+    const res = await fetch("/api/chat/stream", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -115,31 +166,72 @@ form.addEventListener("submit", async (event) => {
         model: modelSelect.value || null,
       }),
     });
-    const data = await res.json();
-    thinking.innerHTML = renderMarkdown(data.reply);
-    let meta = null;
-    if (data.source === "council" && data.contributors?.length > 1) {
-      meta = `konsey: ${data.contributors.length} model birlikte cevapladi`;
-    } else if (data.source === "search") {
-      meta = "web aramasiyla cevaplandi";
-    } else if (data.source === "summary") {
-      meta = "sayfa ozetlendi";
-    } else if (data.source === "model" && data.contributors?.length) {
-      meta = data.contributors[0];
+
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const parts = buffer.split("\n\n");
+      buffer = parts.pop();
+      for (const part of parts) {
+        const line = part.trim();
+        if (!line.startsWith("data:")) continue;
+        const event = JSON.parse(line.slice(5).trim());
+        if (event.type === "delta") {
+          full += event.text;
+          bubble.innerHTML = renderMarkdown(full);
+          scrollDown();
+        } else if (event.type === "meta") {
+          meta = metaFor(event);
+        } else if (event.type === "error") {
+          full = event.text;
+          bubble.innerHTML = renderMarkdown(full);
+        }
+      }
     }
-    if (meta) addMeta(meta);
-    saveEntry("assistant", data.reply, meta);
-    speak(data.reply);
   } catch (err) {
-    thinking.textContent = `[baglanti hatasi] ${err}`;
+    full = full || `[baglanti hatasi] ${err}`;
+    bubble.innerHTML = renderMarkdown(full);
   }
+
+  bubble.classList.remove("streaming");
+  addCopyButton(bubble, () => full);
+  if (meta) addMeta(meta);
+  saveEntry("assistant", full, meta);
+  speak(full);
+  busy = false;
+}
+
+form.addEventListener("submit", (event) => {
+  event.preventDefault();
+  const message = input.value.trim();
+  if (message) sendMessage(message);
+});
+
+// Welcome ekranindaki oneri cipleri.
+document.addEventListener("click", (e) => {
+  const chip = e.target.closest(".chip");
+  if (!chip) return;
+  if (chip.dataset.send === "__council__") {
+    councilToggle.checked = true;
+    input.value = "Kuantum bilgisayarlari basit bir dille anlatir misin?";
+    autoGrow();
+    input.focus();
+    return;
+  }
+  input.value = chip.dataset.fill || "";
+  autoGrow();
+  input.focus();
 });
 
 resetBtn.addEventListener("click", async () => {
   await fetch("/api/reset", { method: "POST" });
   localStorage.removeItem(HISTORY_KEY);
-  chat.innerHTML = "";
-  addBubble("system", "Hafiza temizlendi.");
+  location.reload();
 });
 
 exportBtn.addEventListener("click", () => {
@@ -156,7 +248,7 @@ exportBtn.addEventListener("click", () => {
   URL.revokeObjectURL(a.href);
 });
 
-// Sesli giris: destekleyen tarayicilarda mikrofon butonunu goster.
+// --- Sesli giris ---
 const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
 if (SpeechRec) {
   micBtn.hidden = false;
@@ -174,10 +266,7 @@ if (SpeechRec) {
     listening = false;
     micBtn.classList.remove("recording");
   };
-  recognition.onerror = () => {
-    listening = false;
-    micBtn.classList.remove("recording");
-  };
+  recognition.onerror = recognition.onend;
 
   micBtn.addEventListener("click", () => {
     if (listening) {
@@ -190,10 +279,14 @@ if (SpeechRec) {
   });
 }
 
-// Acilis: gecmisi geri yukle, model secicisini doldur, saglik kontrolu yap.
+// --- Acilis: gecmisi yukle, model secicisini doldur, saglik uyarisi goster ---
 (async () => {
-  for (const entry of loadHistory()) {
-    addBubble(entry.role, entry.text, { skipSave: true, meta: entry.meta });
+  const history = loadHistory();
+  if (history.length) {
+    hideWelcome();
+    for (const entry of history) {
+      addBubble(entry.role, entry.text, { skipSave: true, meta: entry.meta });
+    }
   }
 
   try {

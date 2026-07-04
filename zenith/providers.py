@@ -3,6 +3,7 @@ Cerebras, ...) tek bir arayuzden cagirmayi saglayan ince katman."""
 
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
 from dataclasses import dataclass
 
 from .config import ModelSpec
@@ -52,3 +53,39 @@ async def call_model(
         return ModelReply(model_name=spec.name, litellm_id=spec.litellm_id, content=content.strip())
     except Exception as exc:  # noqa: BLE001 - saglayici hatalari cok cesitli
         raise ProviderError(spec.name, exc) from exc
+
+
+async def stream_model(
+    spec: ModelSpec,
+    messages: list[dict],
+    *,
+    timeout: int = DEFAULT_TIMEOUT_SECONDS,
+    temperature: float = 0.7,
+) -> AsyncIterator[str]:
+    """Bir modelden cevabi parca parca (token token) akitir.
+
+    Ilk parca gelene kadar bir baglanti hatasi olusursa ProviderError firlatir;
+    boylece router bir sonraki modele gecebilir. Akis basladiktan sonra olusan
+    hatalarda ise eldeki metinle sessizce durur.
+    """
+    import litellm
+
+    try:
+        stream = await litellm.acompletion(
+            model=spec.litellm_id,
+            messages=messages,
+            timeout=timeout,
+            temperature=temperature,
+            stream=True,
+        )
+    except Exception as exc:  # noqa: BLE001
+        raise ProviderError(spec.name, exc) from exc
+
+    try:
+        async for chunk in stream:
+            delta = chunk["choices"][0].get("delta", {})
+            piece = delta.get("content")
+            if piece:
+                yield piece
+    except Exception:  # noqa: BLE001 - akis ortasindaki kesinti: eldekiyle dur
+        return

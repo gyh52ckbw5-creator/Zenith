@@ -8,12 +8,13 @@ App) olarak kullanabilmeni saglar: sunucuyu calistir, tarayicidan ac,
 from __future__ import annotations
 
 import asyncio
+import json
 from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel
 
 from .assistant import ZenithAssistant
@@ -98,6 +99,34 @@ async def chat(payload: ChatRequest) -> ChatResponse:
         council=payload.council,
         source=result.source,
         contributors=result.contributors,
+    )
+
+
+@app.post("/api/chat/stream")
+async def chat_stream(payload: ChatRequest) -> StreamingResponse:
+    """Cevabi Server-Sent Events (SSE) olarak akitir; her satir bir JSON olay.
+
+    Kilit tum akis boyunca tutulur: paylasilan asistanin hafizasi tek yazar
+    olsun ve es zamanli istekler birbirinin akisina karismasin diye.
+    """
+
+    async def event_source():
+        await _lock.acquire()
+        try:
+            _assistant.council_mode = payload.council
+            async for event in _assistant.ask_stream(
+                payload.message, model=payload.model, system=payload.system
+            ):
+                yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
+        except NoAvailableModelError as exc:
+            yield f"data: {json.dumps({'type': 'error', 'text': f'[hata] {exc}'}, ensure_ascii=False)}\n\n"
+        finally:
+            _lock.release()
+
+    return StreamingResponse(
+        event_source(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
 
 

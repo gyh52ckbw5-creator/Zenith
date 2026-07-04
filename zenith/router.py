@@ -3,12 +3,26 @@ olursa oncelik sirasindaki bir sonraki modele gecer (fallback zinciri)."""
 
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
+
 from .config import ZenithConfig
-from .providers import ModelReply, ProviderError, call_model
+from .providers import ModelReply, ProviderError, call_model, stream_model
 
 
 class NoAvailableModelError(RuntimeError):
     """Hicbir model kullanilabilir (API anahtari / Ollama) durumda degilse."""
+
+
+def _ordered_candidates(config, tags, preferred):
+    candidates = config.models_for_tags(tags)
+    if preferred:
+        candidates = sorted(candidates, key=lambda m: m.name != preferred)
+    if not candidates:
+        raise NoAvailableModelError(
+            "Kullanilabilir model yok. config/models.yaml icindeki modeller icin "
+            "gerekli API anahtarlarini .env dosyasina ekleyin ya da Ollama'yi calistirin."
+        )
+    return candidates
 
 
 async def ask(
@@ -23,14 +37,7 @@ async def ask(
     `preferred` verilirse o model zincirin basina alinir (kullanicinin
     arayuzden sectigi model); basarisiz olursa normal zincire devam edilir.
     """
-    candidates = config.models_for_tags(tags)
-    if preferred:
-        candidates = sorted(candidates, key=lambda m: m.name != preferred)
-    if not candidates:
-        raise NoAvailableModelError(
-            "Kullanilabilir model yok. config/models.yaml icindeki modeller icin "
-            "gerekli API anahtarlarini .env dosyasina ekleyin ya da Ollama'yi calistirin."
-        )
+    candidates = _ordered_candidates(config, tags, preferred)
 
     errors: list[ProviderError] = []
     for spec in candidates:
@@ -39,6 +46,39 @@ async def ask(
         except ProviderError as exc:
             errors.append(exc)
             continue
+
+    details = "; ".join(str(e) for e in errors)
+    raise NoAvailableModelError(f"Denenen tum modeller basarisiz oldu: {details}")
+
+
+async def ask_stream(
+    config: ZenithConfig,
+    messages: list[dict],
+    *,
+    tags: tuple[str, ...] = (),
+    preferred: str | None = None,
+) -> AsyncIterator[tuple[str, str]]:
+    """`ask` gibi ama cevabi akitir. ('model', ad) ve ('delta', parca)
+    seklinde ikililer uretir. Bir model daha ilk parca gelmeden basarisiz
+    olursa sonraki modele gecer; hicbiri calismazsa NoAvailableModelError."""
+    candidates = _ordered_candidates(config, tags, preferred)
+
+    errors: list[ProviderError] = []
+    for spec in candidates:
+        gen = stream_model(spec, messages)
+        try:
+            first = await gen.__anext__()
+        except ProviderError as exc:
+            errors.append(exc)
+            continue
+        except StopAsyncIteration:
+            continue  # bos cevap - sonraki modeli dene
+
+        yield ("model", spec.name)
+        yield ("delta", first)
+        async for piece in gen:
+            yield ("delta", piece)
+        return
 
     details = "; ".join(str(e) for e in errors)
     raise NoAvailableModelError(f"Denenen tum modeller basarisiz oldu: {details}")
