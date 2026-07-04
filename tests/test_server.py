@@ -49,7 +49,32 @@ def test_models_endpoint_lists_configured_models():
     client = TestClient(server.app)
     res = client.get("/api/models")
     assert res.status_code == 200
-    assert len(res.json()["models"]) > 0
+    data = res.json()
+    assert len(data["models"]) > 0
+    assert len(data["detail"]) == len(data["models"])
+    first = data["detail"][0]
+    assert {"name", "provider", "priority", "tags", "ready"} <= set(first)
+
+
+def test_chat_endpoint_forwards_model_and_system(monkeypatch):
+    from zenith.assistant import AskResult
+
+    captured = {}
+
+    async def fake_ask(self, message, *, model=None, system=None, **kwargs):
+        captured["model"] = model
+        captured["system"] = system
+        return AskResult(text="ok")
+
+    monkeypatch.setattr(server.ZenithAssistant, "ask", fake_ask)
+    client = TestClient(server.app)
+    res = client.post(
+        "/api/chat",
+        json={"message": "hi", "model": "openrouter-hermes-3-405b-free", "system": "kisa cevap ver"},
+    )
+    assert res.status_code == 200
+    assert captured["model"] == "openrouter-hermes-3-405b-free"
+    assert captured["system"] == "kisa cevap ver"
 
 
 def test_chat_endpoint_uses_assistant(monkeypatch):

@@ -36,6 +36,8 @@ _lock = asyncio.Lock()  # tek kullanicilik asistan: hafizada yaris durumunu onle
 class ChatRequest(BaseModel):
     message: str
     council: bool = False
+    model: str | None = None  # arayuzden secilen model (bos = otomatik)
+    system: str | None = None  # istege bagli kisilik/system prompt override
 
 
 class ChatResponse(BaseModel):
@@ -65,7 +67,20 @@ async def health() -> dict:
 
 @app.get("/api/models")
 async def list_models() -> dict:
-    return {"models": _assistant.list_models()}
+    """Hem insan-okur ozet hem de arayuzun model secicisi icin yapisal liste."""
+    return {
+        "models": _assistant.list_models(),
+        "detail": [
+            {
+                "name": spec.name,
+                "provider": spec.provider,
+                "priority": spec.priority,
+                "tags": list(spec.tags),
+                "ready": spec.is_available(),
+            }
+            for spec in _assistant.config.models
+        ],
+    }
 
 
 @app.post("/api/chat", response_model=ChatResponse)
@@ -73,7 +88,9 @@ async def chat(payload: ChatRequest) -> ChatResponse:
     async with _lock:
         _assistant.council_mode = payload.council
         try:
-            result = await _assistant.ask(payload.message)
+            result = await _assistant.ask(
+                payload.message, model=payload.model, system=payload.system
+            )
         except NoAvailableModelError as exc:
             return ChatResponse(reply=f"[hata] {exc}", council=payload.council, source="error")
     return ChatResponse(

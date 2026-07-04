@@ -60,7 +60,14 @@ class ZenithAssistant:
         self.memory = memory if memory is not None else ConversationMemory()
         self.council_mode = council_mode
 
-    async def ask(self, user_input: str, *, tags: tuple[str, ...] = ()) -> AskResult:
+    async def ask(
+        self,
+        user_input: str,
+        *,
+        tags: tuple[str, ...] = (),
+        model: str | None = None,
+        system: str | None = None,
+    ) -> AskResult:
         local_reply = tools.try_handle_locally(user_input)
         if local_reply is not None:
             self._remember(user_input, local_reply)
@@ -68,15 +75,19 @@ class ZenithAssistant:
 
         search_match = SEARCH_PATTERN.match(user_input)
         if search_match:
-            return await self._ask_with_search(user_input, search_match.group(1), tags)
+            return await self._ask_with_search(
+                user_input, search_match.group(1), tags, model, system
+            )
 
         self.memory.add("user", user_input)
-        messages = self.memory.as_messages(system_prompt())
-        result = await self._ask_models(messages, tags)
+        messages = self.memory.as_messages(system or system_prompt())
+        result = await self._ask_models(messages, tags, model)
         self.memory.add("assistant", result.text)
         return result
 
-    async def _ask_models(self, messages: list[dict], tags: tuple[str, ...]) -> AskResult:
+    async def _ask_models(
+        self, messages: list[dict], tags: tuple[str, ...], model: str | None = None
+    ) -> AskResult:
         if self.council_mode:
             outcome = await council.ask(self.config, messages, tags=tags)
             return AskResult(
@@ -84,11 +95,16 @@ class ZenithAssistant:
                 source="council",
                 contributors=[op.model_name for op in outcome.contributors],
             )
-        reply = await router.ask(self.config, messages, tags=tags)
+        reply = await router.ask(self.config, messages, tags=tags, preferred=model)
         return AskResult(text=reply.content, source="model", contributors=[reply.model_name])
 
     async def _ask_with_search(
-        self, user_input: str, query: str, tags: tuple[str, ...]
+        self,
+        user_input: str,
+        query: str,
+        tags: tuple[str, ...],
+        model: str | None = None,
+        system: str | None = None,
     ) -> AskResult:
         try:
             results = await websearch.search(query)
@@ -99,14 +115,14 @@ class ZenithAssistant:
 
         findings = websearch.format_results(results)
         self.memory.add("user", user_input)
-        messages = self.memory.as_messages(system_prompt())
+        messages = self.memory.as_messages(system or system_prompt())
         # Arama sonuclarini yalnizca bu soruya eklenen gecici baglam olarak ver;
         # hafizaya ham sonuclar degil, kullanici sorusu + nihai cevap yazilir.
         messages[-1] = {
             "role": "user",
             "content": f"{SEARCH_ANSWER_PROMPT}\n\nSorgu: {query}\n\nArama sonuclari:\n{findings}",
         }
-        result = await self._ask_models(messages, tags)
+        result = await self._ask_models(messages, tags, model)
         result.source = "search"
         self.memory.add("assistant", result.text)
         return result

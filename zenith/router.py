@@ -16,8 +16,16 @@ async def ask(
     messages: list[dict],
     *,
     tags: tuple[str, ...] = (),
+    preferred: str | None = None,
 ) -> ModelReply:
+    """Modelleri oncelik sirasiyla dener.
+
+    `preferred` verilirse o model zincirin basina alinir (kullanicinin
+    arayuzden sectigi model); basarisiz olursa normal zincire devam edilir.
+    """
     candidates = config.models_for_tags(tags)
+    if preferred:
+        candidates = sorted(candidates, key=lambda m: m.name != preferred)
     if not candidates:
         raise NoAvailableModelError(
             "Kullanilabilir model yok. config/models.yaml icindeki modeller icin "

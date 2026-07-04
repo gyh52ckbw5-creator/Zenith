@@ -61,3 +61,35 @@ async def test_ask_raises_when_no_models_configured():
     config = make_config()
     with pytest.raises(router.NoAvailableModelError):
         await router.ask(config, [{"role": "user", "content": "hi"}])
+
+
+@pytest.mark.asyncio
+async def test_preferred_model_is_tried_first(monkeypatch):
+    spec_a = ModelSpec("a", "provider/a", "provider", None, (), priority=1)
+    spec_b = ModelSpec("b", "provider/b", "provider", None, (), priority=2)
+    config = make_config(spec_a, spec_b)
+
+    async def fake_call_model(spec, messages, **kwargs):
+        return ModelReply(spec.name, spec.litellm_id, f"reply-from-{spec.name}")
+
+    monkeypatch.setattr(router, "call_model", fake_call_model)
+
+    reply = await router.ask(config, [{"role": "user", "content": "hi"}], preferred="b")
+    assert reply.model_name == "b"
+
+
+@pytest.mark.asyncio
+async def test_preferred_model_falls_back_to_chain_on_failure(monkeypatch):
+    spec_a = ModelSpec("a", "provider/a", "provider", None, (), priority=1)
+    spec_b = ModelSpec("b", "provider/b", "provider", None, (), priority=2)
+    config = make_config(spec_a, spec_b)
+
+    async def fake_call_model(spec, messages, **kwargs):
+        if spec.name == "b":
+            raise ProviderError("b", Exception("down"))
+        return ModelReply(spec.name, spec.litellm_id, "ok-from-a")
+
+    monkeypatch.setattr(router, "call_model", fake_call_model)
+
+    reply = await router.ask(config, [{"role": "user", "content": "hi"}], preferred="b")
+    assert reply.model_name == "a"

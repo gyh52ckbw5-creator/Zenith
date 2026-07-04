@@ -31,7 +31,7 @@ async def test_local_tool_answers_without_model(tmp_path):
 async def test_model_answer_records_contributor(tmp_path, monkeypatch):
     zen = make_assistant(tmp_path)
 
-    async def fake_router_ask(config, messages, tags=()):
+    async def fake_router_ask(config, messages, tags=(), preferred=None):
         return ModelReply("m1", "p/m1", "model cevabi")
 
     monkeypatch.setattr(assistant_module.router, "ask", fake_router_ask)
@@ -51,7 +51,7 @@ async def test_search_command_feeds_results_to_model(tmp_path, monkeypatch):
         captured["query"] = query
         return [SearchResult(title="Baslik", url="https://x", snippet="ozet")]
 
-    async def fake_router_ask(config, messages, tags=()):
+    async def fake_router_ask(config, messages, tags=(), preferred=None):
         captured["prompt"] = messages[-1]["content"]
         return ModelReply("m1", "p/m1", "arama destekli cevap")
 
@@ -66,6 +66,23 @@ async def test_search_command_feeds_results_to_model(tmp_path, monkeypatch):
     # Hafizaya ham arama sonuclari degil, soru + nihai cevap yazilir.
     assert zen.memory.messages[-2]["content"] == "ara: bugun dolar kuru"
     assert zen.memory.messages[-1]["content"] == "arama destekli cevap"
+
+
+@pytest.mark.asyncio
+async def test_model_and_system_overrides_are_passed_through(tmp_path, monkeypatch):
+    zen = make_assistant(tmp_path)
+    captured = {}
+
+    async def fake_router_ask(config, messages, tags=(), preferred=None):
+        captured["preferred"] = preferred
+        captured["system"] = messages[0]["content"]
+        return ModelReply("m1", "p/m1", "cevap")
+
+    monkeypatch.setattr(assistant_module.router, "ask", fake_router_ask)
+
+    await zen.ask("selam", model="m1", system="ozel kisilik")
+    assert captured["preferred"] == "m1"
+    assert captured["system"] == "ozel kisilik"
 
 
 @pytest.mark.asyncio
