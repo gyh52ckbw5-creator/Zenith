@@ -3,6 +3,7 @@ konsey modunu bir araya getiren ana kisilik/orkestrasyon katmani."""
 
 from __future__ import annotations
 
+import os
 import re
 from dataclasses import dataclass, field
 
@@ -10,12 +11,25 @@ from . import council, router, tools, websearch
 from .config import ZenithConfig, load_config
 from .memory import ConversationMemory
 
-SYSTEM_PROMPT = (
-    "Sen Zenith adinda, kullanicinin kisisel yapay zeka asistanisin. Birden "
-    "fazla ucretsiz yapay zeka modelinin gucunu birlestirerek calisiyorsun. "
-    "Kisa, net, samimi ve yardimsever cevaplar ver. Emin olmadigin konularda "
-    "bunu belirt."
+DEFAULT_SYSTEM_PROMPT = (
+    "Sen Zenith'sin: Iron Man'deki Jarvis tarzinda, kullanicinin kisisel "
+    "yapay zeka asistani. Birden fazla acik kaynak ve ucretsiz yapay zeka "
+    "modelinin gucunu birlestirerek calisiyorsun. Uslubun: zeki, sakin, "
+    "hafif esprili ve her zaman cozum odakli. Kullanicina ara sira 'efendim' "
+    "diye hitap edebilirsin ama abartma. Cevaplarin kisa ve net olsun; "
+    "gerektiginde adim adim acikla. Emin olmadigin konularda bunu durustce "
+    "soyle, uydurma. Kullanici Turkce yazarsa Turkce, baska dilde yazarsa o "
+    "dilde cevap ver."
 )
+
+
+def system_prompt() -> str:
+    """Kisilik ZENITH_SYSTEM_PROMPT ortam degiskeniyle ozellestirilebilir."""
+    return os.environ.get("ZENITH_SYSTEM_PROMPT") or DEFAULT_SYSTEM_PROMPT
+
+
+# Geriye donuk uyumluluk icin eski ad korunur.
+SYSTEM_PROMPT = DEFAULT_SYSTEM_PROMPT
 
 SEARCH_PATTERN = re.compile(r"^\s*(?:ara|search)\s*[:=]\s*(.+)$", re.IGNORECASE)
 
@@ -57,7 +71,7 @@ class ZenithAssistant:
             return await self._ask_with_search(user_input, search_match.group(1), tags)
 
         self.memory.add("user", user_input)
-        messages = self.memory.as_messages(SYSTEM_PROMPT)
+        messages = self.memory.as_messages(system_prompt())
         result = await self._ask_models(messages, tags)
         self.memory.add("assistant", result.text)
         return result
@@ -85,7 +99,7 @@ class ZenithAssistant:
 
         findings = websearch.format_results(results)
         self.memory.add("user", user_input)
-        messages = self.memory.as_messages(SYSTEM_PROMPT)
+        messages = self.memory.as_messages(system_prompt())
         # Arama sonuclarini yalnizca bu soruya eklenen gecici baglam olarak ver;
         # hafizaya ham sonuclar degil, kullanici sorusu + nihai cevap yazilir.
         messages[-1] = {

@@ -56,7 +56,9 @@ async def health() -> dict:
             None
             if available
             else "Hicbir model hazir degil. Ortam degiskenlerine en az bir ucretsiz "
-            "API anahtari ekleyin (orn. GROQ_API_KEY) ya da yerelde Ollama calistirin."
+            "API anahtari ekleyin (onerilen: OPENROUTER_API_KEY, tek anahtarla "
+            "Hermes/DeepSeek/Llama gibi onlarca ucretsiz model) ya da yerelde "
+            "Ollama calistirin."
         ),
     }
 

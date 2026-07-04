@@ -1,115 +1,218 @@
 # Zenith model registry
 #
-# Her giriş bir "ücretsiz" AI modelini tanımlar. `litellm_id` alanı, LiteLLM'in
-# ilgili sağlayıcıyı çağırmak için kullandığı kimliktir (bkz. https://docs.litellm.ai/docs/providers).
+# Her giris bir "ucretsiz" AI modelini tanimlar. `litellm_id`, LiteLLM'in ilgili
+# saglayiciyi cagirmak icin kullandigi kimliktir (https://docs.litellm.ai/docs/providers).
 #
-# requires_key: Bu sağlayıcıyı kullanmak için gereken ortam değişkeninin adı.
-#               null ise (örn. Ollama), anahtar gerekmez - sadece yerel Ollama'nın
-#               çalışıyor olması yeterlidir.
+# requires_key: Bu saglayici icin gereken ortam degiskeni. null ise (Ollama)
+#               anahtar gerekmez, yerel Ollama'nin calismasi yeterlidir.
+# tags:         Router'in modeli hangi gorevler icin tercih edecegi
+#               ("chat", "code", "reasoning", "fast", "vision", "local").
+# priority:     Kucuk sayi = once denenir (fallback zinciri sirasi).
 #
-# tags: Router'ın modeli hangi görev türleri için tercih edeceğini belirler.
-#       ("chat", "code", "reasoning", "fast", "vision")
+# ONERILEN KURULUM (tek anahtar, en cok ucretsiz model):
+#   OPENROUTER_API_KEY -> https://openrouter.ai/keys
+#   Hermes 3 405B, DeepSeek V3/R1, Llama 4, Qwen3, Kimi K2, GLM, gpt-oss...
+#   ":free" etiketli onlarca acik kaynak model tek anahtarla gelir.
 #
-# priority: Küçük sayı = daha yüksek öncelik. Aynı anahtar mevcutsa/Ollama
-#           kuruluysa, router bu sırayla dener (fallback zinciri).
+# GITHUB HESABIN VARSA (ekstra kayit gerektirmez):
+#   GITHUB_API_KEY -> https://github.com/settings/tokens ("models:read" izni)
+#   GitHub Models uzerinden GPT-4o-mini, DeepSeek-R1, Llama, Phi-4 ucretsiz.
 #
-# NOT: Sağlayıcıların "ücretsiz katman" modelleri zamanla değişebilir. Bu liste
-# 2026 başı itibarıyla bilinen ücretsiz/ücretsiz-katman modelleri baz alır.
-# Kendi hesabınızdaki güncel ücretsiz model listesini kontrol edip bu dosyayı
-# güncelleyebilirsiniz.
+# NOT: Saglayicilarin ucretsiz model listeleri zamanla degisir; guncel listeyi
+# kendi hesabindan kontrol edip bu dosyayi duzenleyebilirsin.
 
 models:
-  # --- Yerel, tamamen ücretsiz (internet gerekmez, API anahtarı gerekmez) ---
-  - name: ollama-llama3.1-8b
-    litellm_id: ollama/llama3.1
-    provider: ollama
-    requires_key: null
-    tags: [chat, fast, local]
-    priority: 10
-
-  - name: ollama-qwen2.5-7b
-    litellm_id: ollama/qwen2.5
-    provider: ollama
-    requires_key: null
-    tags: [chat, code, local]
-    priority: 11
-
-  - name: ollama-deepseek-r1-8b
-    litellm_id: ollama/deepseek-r1
-    provider: ollama
-    requires_key: null
-    tags: [reasoning, local]
-    priority: 12
-
-  # --- Groq ücretsiz katman (çok hızlı, cömert rate-limit) ---
-  - name: groq-llama-3.3-70b
-    litellm_id: groq/llama-3.3-70b-versatile
-    provider: groq
-    requires_key: GROQ_API_KEY
-    tags: [chat, reasoning, fast]
-    priority: 1
-
-  - name: groq-llama-3.1-8b-instant
-    litellm_id: groq/llama-3.1-8b-instant
-    provider: groq
-    requires_key: GROQ_API_KEY
-    tags: [chat, fast]
-    priority: 2
-
-  - name: groq-deepseek-r1-distill-70b
-    litellm_id: groq/deepseek-r1-distill-llama-70b
-    provider: groq
-    requires_key: GROQ_API_KEY
-    tags: [reasoning, code]
-    priority: 3
-
-  # --- Google AI Studio ücretsiz katman ---
-  - name: gemini-2.0-flash
-    litellm_id: gemini/gemini-2.0-flash
-    provider: gemini
-    requires_key: GEMINI_API_KEY
-    tags: [chat, vision, fast]
-    priority: 4
-
-  - name: gemini-1.5-flash
-    litellm_id: gemini/gemini-1.5-flash
-    provider: gemini
-    requires_key: GEMINI_API_KEY
-    tags: [chat, vision]
-    priority: 5
-
-  # --- OpenRouter ":free" modeller (tek anahtarla düzinelerce ücretsiz modele erişim) ---
-  - name: openrouter-llama-3.3-70b-free
-    litellm_id: openrouter/meta-llama/llama-3.3-70b-instruct:free
+  # --- OpenRouter ":free" acik kaynak modeller (tek anahtar, en genis secim) ---
+  - name: openrouter-hermes-3-405b-free
+    litellm_id: openrouter/nousresearch/hermes-3-llama-3.1-405b:free
     provider: openrouter
     requires_key: OPENROUTER_API_KEY
     tags: [chat, reasoning]
-    priority: 6
+    priority: 1
+
+  - name: openrouter-deepseek-v3-free
+    litellm_id: openrouter/deepseek/deepseek-chat-v3-0324:free
+    provider: openrouter
+    requires_key: OPENROUTER_API_KEY
+    tags: [chat, code, fast]
+    priority: 2
 
   - name: openrouter-deepseek-r1-free
     litellm_id: openrouter/deepseek/deepseek-r1:free
     provider: openrouter
     requires_key: OPENROUTER_API_KEY
     tags: [reasoning, code]
-    priority: 7
+    priority: 3
 
-  - name: openrouter-qwen-2.5-72b-free
-    litellm_id: openrouter/qwen/qwen-2.5-72b-instruct:free
+  - name: openrouter-llama-4-maverick-free
+    litellm_id: openrouter/meta-llama/llama-4-maverick:free
+    provider: openrouter
+    requires_key: OPENROUTER_API_KEY
+    tags: [chat, vision, fast]
+    priority: 4
+
+  - name: openrouter-qwen3-235b-free
+    litellm_id: openrouter/qwen/qwen3-235b-a22b:free
+    provider: openrouter
+    requires_key: OPENROUTER_API_KEY
+    tags: [chat, reasoning, code]
+    priority: 5
+
+  - name: openrouter-kimi-k2-free
+    litellm_id: openrouter/moonshotai/kimi-k2:free
     provider: openrouter
     requires_key: OPENROUTER_API_KEY
     tags: [chat, code]
+    priority: 6
+
+  - name: openrouter-glm-4.5-air-free
+    litellm_id: openrouter/z-ai/glm-4.5-air:free
+    provider: openrouter
+    requires_key: OPENROUTER_API_KEY
+    tags: [chat, fast]
+    priority: 7
+
+  - name: openrouter-gpt-oss-20b-free
+    litellm_id: openrouter/openai/gpt-oss-20b:free
+    provider: openrouter
+    requires_key: OPENROUTER_API_KEY
+    tags: [chat, fast, code]
     priority: 8
 
-  # --- Cerebras ücretsiz katman (çok hızlı inference) ---
+  - name: openrouter-llama-3.3-70b-free
+    litellm_id: openrouter/meta-llama/llama-3.3-70b-instruct:free
+    provider: openrouter
+    requires_key: OPENROUTER_API_KEY
+    tags: [chat, reasoning]
+    priority: 9
+
+  - name: openrouter-mistral-nemo-free
+    litellm_id: openrouter/mistralai/mistral-nemo:free
+    provider: openrouter
+    requires_key: OPENROUTER_API_KEY
+    tags: [chat, fast]
+    priority: 10
+
+  - name: openrouter-gemma-3-27b-free
+    litellm_id: openrouter/google/gemma-3-27b-it:free
+    provider: openrouter
+    requires_key: OPENROUTER_API_KEY
+    tags: [chat, vision]
+    priority: 11
+
+  # --- GitHub Models (GitHub hesabi yeterli, PAT ile ucretsiz) ---
+  - name: github-gpt-4o-mini
+    litellm_id: github/gpt-4o-mini
+    provider: github
+    requires_key: GITHUB_API_KEY
+    tags: [chat, fast, vision]
+    priority: 12
+
+  - name: github-deepseek-r1
+    litellm_id: github/DeepSeek-R1
+    provider: github
+    requires_key: GITHUB_API_KEY
+    tags: [reasoning, code]
+    priority: 13
+
+  - name: github-llama-3.3-70b
+    litellm_id: github/Llama-3.3-70B-Instruct
+    provider: github
+    requires_key: GITHUB_API_KEY
+    tags: [chat, reasoning]
+    priority: 14
+
+  - name: github-phi-4
+    litellm_id: github/Phi-4
+    provider: github
+    requires_key: GITHUB_API_KEY
+    tags: [chat, code, fast]
+    priority: 15
+
+  # --- Google AI Studio ucretsiz katman ---
+  - name: gemini-2.0-flash
+    litellm_id: gemini/gemini-2.0-flash
+    provider: gemini
+    requires_key: GEMINI_API_KEY
+    tags: [chat, vision, fast]
+    priority: 16
+
+  - name: gemini-1.5-flash
+    litellm_id: gemini/gemini-1.5-flash
+    provider: gemini
+    requires_key: GEMINI_API_KEY
+    tags: [chat, vision]
+    priority: 17
+
+  # --- Mistral La Plateforme ucretsiz deney katmani ---
+  - name: mistral-small
+    litellm_id: mistral/mistral-small-latest
+    provider: mistral
+    requires_key: MISTRAL_API_KEY
+    tags: [chat, fast, code]
+    priority: 18
+
+  # --- Cerebras ucretsiz katman (cok hizli inference) ---
   - name: cerebras-llama-3.1-70b
     litellm_id: cerebras/llama3.1-70b
     provider: cerebras
     requires_key: CEREBRAS_API_KEY
     tags: [chat, fast, reasoning]
-    priority: 9
+    priority: 19
 
-# Council (konsey) modu: bir soruya birden fazla modelin aynı anda cevap
-# verip, sonra bir "sentezleyici" modelin bu cevapları birleştirdiği mod.
+  # --- Yerel Ollama (internet ve anahtar gerekmez; Hermes dahil) ---
+  - name: ollama-hermes3
+    litellm_id: ollama/hermes3
+    provider: ollama
+    requires_key: null
+    tags: [chat, reasoning, local]
+    priority: 20
+
+  - name: ollama-llama3.1-8b
+    litellm_id: ollama/llama3.1
+    provider: ollama
+    requires_key: null
+    tags: [chat, fast, local]
+    priority: 21
+
+  - name: ollama-qwen2.5-7b
+    litellm_id: ollama/qwen2.5
+    provider: ollama
+    requires_key: null
+    tags: [chat, code, local]
+    priority: 22
+
+  - name: ollama-deepseek-r1-8b
+    litellm_id: ollama/deepseek-r1
+    provider: ollama
+    requires_key: null
+    tags: [reasoning, local]
+    priority: 23
+
+  # --- Groq (istege bagli; varsayilan olarak en sona alindi) ---
+  - name: groq-llama-3.3-70b
+    litellm_id: groq/llama-3.3-70b-versatile
+    provider: groq
+    requires_key: GROQ_API_KEY
+    tags: [chat, reasoning, fast]
+    priority: 90
+
+  - name: groq-llama-3.1-8b-instant
+    litellm_id: groq/llama-3.1-8b-instant
+    provider: groq
+    requires_key: GROQ_API_KEY
+    tags: [chat, fast]
+    priority: 91
+
+  - name: groq-deepseek-r1-distill-70b
+    litellm_id: groq/deepseek-r1-distill-llama-70b
+    provider: groq
+    requires_key: GROQ_API_KEY
+    tags: [reasoning, code]
+    priority: 92
+
+# Council (konsey) modu: bir soruya birden fazla modelin ayni anda cevap verip,
+# bir "sentezleyici" modelin bunlari birlestirdigi mod.
 council:
   max_parallel_models: 4
   synthesizer_tags: [reasoning]

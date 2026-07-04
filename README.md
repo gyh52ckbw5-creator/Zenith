@@ -60,16 +60,20 @@ cp .env.example .env
 `.env` dosyasını, sahip olduğun ücretsiz API anahtarlarıyla doldur (hiçbirini
 doldurmasan da yerel Ollama ile çalışabilirsin):
 
-| Sağlayıcı | Ücretsiz anahtar nereden alınır |
-|---|---|
-| Groq | https://console.groq.com/keys |
-| Google Gemini | https://aistudio.google.com/apikey |
-| OpenRouter (`:free` modeller) | https://openrouter.ai/keys |
-| Cerebras | https://cloud.cerebras.ai |
-| Ollama (yerel, sınırsız) | https://ollama.com — kurduktan sonra `ollama pull llama3.1` |
+| Sağlayıcı | Ücretsiz ne veriyor | Anahtar |
+|---|---|---|
+| **OpenRouter (önerilen)** | Tek anahtarla `:free` etiketli onlarca açık kaynak model: **Hermes 3 405B**, DeepSeek V3/R1, Llama 4, Qwen3, Kimi K2, GLM 4.5, gpt-oss... | https://openrouter.ai/keys |
+| **GitHub Models** | GitHub hesabın zaten varsa ekstra kayıt yok: GPT-4o-mini, DeepSeek-R1, Llama 3.3, Phi-4 | https://github.com/settings/tokens (`models:read` izni) |
+| Google Gemini | Gemini 2.0 Flash ücretsiz katman | https://aistudio.google.com/apikey |
+| Mistral | Mistral Small ücretsiz deney katmanı | https://console.mistral.ai |
+| Cerebras | Llama 70B, çok hızlı inference | https://cloud.cerebras.ai |
+| Groq (isteğe bağlı) | Llama/DeepSeek modelleri | https://console.groq.com/keys |
+| Ollama (yerel, sınırsız) | Hermes 3, Llama, Qwen, DeepSeek yerel çalışır | https://ollama.com — `ollama pull hermes3` |
 
-Not: Sağlayıcıların ücretsiz katman koşulları zamanla değişebilir;
+Not: Sağlayıcıların ücretsiz model listeleri zamanla değişebilir;
 `config/models.yaml` dosyasını kendi hesabına göre güncelleyebilirsin.
+Zenith'in kişiliğini de `ZENITH_SYSTEM_PROMPT` ortam değişkeniyle
+özelleştirebilirsin.
 
 ## Kullanım
 
@@ -134,9 +138,9 @@ Ev ağı dışından da kullanmak istersen iki hazır yol var:
 **Vercel (ücretsiz):** Repo'da `vercel.json` + `api/index.py` hazır.
 Vercel hesabını GitHub'a bağlayıp bu repo'yu import etmen yeterli. Deploy
 sonrası Vercel panelinden **Settings → Environment Variables** kısmına en az
-bir ücretsiz API anahtarı ekle (örn. `GROQ_API_KEY`) — serverless ortamda
-yerel Ollama olmadığı için anahtar şart. Hafıza serverless'ta geçicidir
-(cold start'ta sıfırlanır).
+bir ücretsiz API anahtarı ekle (önerilen: `OPENROUTER_API_KEY`) — serverless
+ortamda yerel Ollama olmadığı için anahtar şart. Hafıza serverless'ta
+geçicidir (cold start'ta sıfırlanır).
 
 **Docker (Render / Fly.io / Railway):** Repo'daki `Dockerfile` ile herhangi
 bir container hostunda kalıcı hafızayla çalışır:

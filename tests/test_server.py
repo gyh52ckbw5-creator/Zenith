@@ -21,13 +21,20 @@ def test_manifest_has_ios_friendly_icons():
 
 def test_health_reports_no_models_without_keys(monkeypatch):
     monkeypatch.setenv("ZENITH_DISABLE_OLLAMA", "1")
-    for key in ("GROQ_API_KEY", "GEMINI_API_KEY", "OPENROUTER_API_KEY", "CEREBRAS_API_KEY"):
+    for key in (
+        "GROQ_API_KEY",
+        "GEMINI_API_KEY",
+        "OPENROUTER_API_KEY",
+        "CEREBRAS_API_KEY",
+        "GITHUB_API_KEY",
+        "MISTRAL_API_KEY",
+    ):
         monkeypatch.delenv(key, raising=False)
     res = TestClient(server.app).get("/api/health")
     assert res.status_code == 200
     data = res.json()
     assert data["status"] == "no_models"
-    assert "GROQ_API_KEY" in data["hint"]
+    assert "OPENROUTER_API_KEY" in data["hint"]
 
 
 def test_health_ok_when_a_key_is_present(monkeypatch):
