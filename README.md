@@ -2,8 +2,9 @@
 
 Zenith, birden fazla **ücretsiz** yapay zeka modelini (yerel Ollama modelleri +
 Groq, Google Gemini, OpenRouter, Cerebras gibi sağlayıcıların ücretsiz
-katmanları) tek bir kişisel asistanda birleştiren, terminalden çalışan bir
-"Jarvis" tarzı asistandır.
+katmanları) tek bir kişisel asistanda birleştiren bir "Jarvis" tarzı
+asistandır. Hem terminalden hem de telefonundan (iOS dahil) bir web
+uygulaması / PWA olarak kullanılabilir.
 
 Tek bir modele bağımlı kalmak yerine, Zenith şunları yapabilir:
 
@@ -31,6 +32,8 @@ zenith/
   tools.py        # yerel, LLM'siz komutlar (hesap makinesi, saat)
   assistant.py    # hepsini birleştiren ZenithAssistant sınıfı
   cli.py          # interaktif terminal arayüzü
+  server.py       # FastAPI web/API katmanı (telefon/iOS icin)
+static/           # mobil uyumlu sohbet arayüzü + PWA (manifest, service worker, ikonlar)
 ```
 
 Sağlayıcı çağrıları [LiteLLM](https://github.com/BerriAI/litellm) üzerinden
@@ -85,6 +88,38 @@ Komutlar:
 - `/reset` — konuşma hafızasını temizle
 - `/exit` — çıkış
 
+## iPhone'da (iOS) kullanım
+
+Zenith native bir App Store uygulaması değil (bunun için Xcode + Apple
+Developer hesabı gerekir); bunun yerine gerçek bir uygulama gibi davranan bir
+**PWA (Progressive Web App)** olarak geliyor — Safari üzerinden telefonuna
+kurup ana ekranından açabilirsin, tam ekran çalışır, kendi ikonu olur.
+
+1. Sunucuyu başlat:
+
+   ```bash
+   python -m zenith web
+   ```
+
+   Varsayılan olarak `http://0.0.0.0:8000` adresinde çalışır.
+
+2. iPhone'un bilgisayarla aynı Wi-Fi ağında olduğundan emin ol, bilgisayarının
+   yerel IP'sini öğren (`ifconfig` / `ipconfig` — örn. `192.168.1.20`) ve
+   iPhone'da Safari'den `http://192.168.1.20:8000` adresini aç.
+
+   - Evden uzaktayken de erişmek istersen [Tailscale](https://tailscale.com)
+     (ücretsiz) ile telefonunu ve bilgisayarını aynı özel ağa alabilir ya da
+     Zenith'i Render/Fly.io/Railway gibi ücretsiz katmanı olan bir servise
+     deploy edebilirsin.
+
+3. Safari'de sayfa açıkken **Paylaş (Share) → Ana Ekrana Ekle**'ye dokun.
+   Zenith artık telefonunda kendi ikonuyla, adres çubuğu olmadan, tam ekran
+   açılan bir uygulama gibi durur.
+
+Bu arayüz `/council` moduna karşılık gelen bir anahtar (Konsey modu),
+hafızayı sıfırlama ve model durumunu listeleme butonları içerir — CLI'daki
+tüm komutların mobil karşılığıdır.
+
 ## Yeni bir ücretsiz model eklemek
 
 `config/models.yaml` dosyasına yeni bir giriş eklemen yeterli:
@@ -116,6 +151,8 @@ edilir.
 
 - Fonksiyon çağırma / araç kullanımı (web arama, dosya okuma) için ortak bir
   şema katmanı
-- Sesli komut (wake word) desteği
-- Basit bir web arayüzü (FastAPI + WebSocket)
+- Sesli komut (wake word) desteği, konuşma-to-metir girişi (iOS'ta Safari'nin
+  yerleşik dikte özelliği zaten klavyeden çalışır)
+- Yanıtları kelime kelime akıtan (streaming/SSE) sohbet arayüzü
 - Uzun süreli hafıza (kullanıcı hakkında kalıcı bilgi/tercihler)
+- Push notification (örn. hatırlatıcılar) için Web Push desteği

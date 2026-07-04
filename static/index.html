@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8" />
+  <title>Zenith</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1" />
+
+  <!-- PWA -->
+  <link rel="manifest" href="/manifest.json" />
+  <meta name="theme-color" content="#0b0f19" />
+
+  <!-- iOS'a ozel: Safari standart manifest'i tam desteklemez, bu etiketler
+       "Ana Ekrana Ekle" ile gercek bir uygulama gibi acilmasini saglar -->
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Zenith" />
+  <link rel="apple-touch-icon" href="/static/icons/icon-180.png" />
+  <link rel="icon" href="/static/icons/icon-192.png" />
+
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <div id="app">
+    <header>
+      <h1>Zenith</h1>
+      <div class="controls">
+        <label class="switch">
+          <input type="checkbox" id="council-toggle" />
+          <span>Konsey modu</span>
+        </label>
+        <button id="reset-btn" title="Hafizayi temizle">Sifirla</button>
+        <button id="models-btn" title="Modelleri listele">Modeller</button>
+      </div>
+    </header>
+
+    <main id="chat"></main>
+
+    <form id="chat-form">
+      <textarea id="chat-input" placeholder="Zenith'e bir sey sor..." rows="1" autofocus></textarea>
+      <button type="submit" id="send-btn">Gonder</button>
+    </form>
+  </div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
