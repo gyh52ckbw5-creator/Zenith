@@ -19,7 +19,8 @@ def test_manifest_has_ios_friendly_icons():
     assert "180x180" in sizes  # iOS apple-touch-icon boyutu
 
 
-def test_health_reports_no_models_without_keys(monkeypatch):
+def test_health_ok_without_keys_thanks_to_pollinations(monkeypatch):
+    # Artik anahtarsiz Pollinations modeli hep hazir; saglik "ok" olmali.
     monkeypatch.setenv("ZENITH_DISABLE_OLLAMA", "1")
     for key in (
         "GROQ_API_KEY",
@@ -33,8 +34,8 @@ def test_health_reports_no_models_without_keys(monkeypatch):
     res = TestClient(server.app).get("/api/health")
     assert res.status_code == 200
     data = res.json()
-    assert data["status"] == "no_models"
-    assert "OPENROUTER_API_KEY" in data["hint"]
+    assert data["status"] == "ok"
+    assert any("pollinations" in name for name in data["ready_models"])
 
 
 def test_health_ok_when_a_key_is_present(monkeypatch):

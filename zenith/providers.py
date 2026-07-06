@@ -27,6 +27,29 @@ class ModelReply:
     content: str
 
 
+POLLINATIONS_URL = "https://text.pollinations.ai/openai"
+
+
+async def _call_pollinations(
+    spec: ModelSpec, messages: list[dict], timeout: int, temperature: float
+) -> str:
+    """Pollinations (ucretsiz, ANAHTARSIZ) OpenAI-uyumlu ucnoktasi.
+
+    litellm_id 'pollinations/<model>' formatindadir; model adi ayrilir.
+    """
+    import httpx
+
+    model = spec.litellm_id.split("/", 1)[-1]
+    async with httpx.AsyncClient(timeout=timeout) as client:
+        resp = await client.post(
+            POLLINATIONS_URL,
+            json={"model": model, "messages": messages, "temperature": temperature},
+        )
+        resp.raise_for_status()
+        data = resp.json()
+    return (data["choices"][0]["message"]["content"] or "").strip()
+
+
 async def call_model(
     spec: ModelSpec,
     messages: list[dict],
@@ -40,6 +63,13 @@ async def call_model(
     bile (ornegin sadece config/router testleri calistirilirken) bu modul
     import edilebilir.
     """
+    if spec.provider == "pollinations":
+        try:
+            content = await _call_pollinations(spec, messages, timeout, temperature)
+            return ModelReply(model_name=spec.name, litellm_id=spec.litellm_id, content=content)
+        except Exception as exc:  # noqa: BLE001
+            raise ProviderError(spec.name, exc) from exc
+
     import litellm
 
     try:
@@ -68,6 +98,16 @@ async def stream_model(
     boylece router bir sonraki modele gecebilir. Akis basladiktan sonra olusan
     hatalarda ise eldeki metinle sessizce durur.
     """
+    if spec.provider == "pollinations":
+        # Pollinations'i tek parca olarak akit (basit ve saglam).
+        try:
+            content = await _call_pollinations(spec, messages, timeout, temperature)
+        except Exception as exc:  # noqa: BLE001
+            raise ProviderError(spec.name, exc) from exc
+        if content:
+            yield content
+        return
+
     import litellm
 
     try:

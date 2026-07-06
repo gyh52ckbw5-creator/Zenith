@@ -189,6 +189,23 @@ models:
     tags: [reasoning, local]
     priority: 23
 
+  # --- Pollinations (TAMAMEN UCRETSIZ, ANAHTAR GEREKMEZ) ---
+  # Hicbir anahtar eklemesen bile Zenith'in cevap vermesini saglar. Anahtarli
+  # modeller (OpenRouter vb.) varsa onlar oncelikli olur; yoksa bunlar devreye girer.
+  - name: pollinations-openai
+    litellm_id: pollinations/openai
+    provider: pollinations
+    requires_key: null
+    tags: [chat, fast, reasoning]
+    priority: 28
+
+  - name: pollinations-openai-fast
+    litellm_id: pollinations/openai-fast
+    provider: pollinations
+    requires_key: null
+    tags: [chat, fast]
+    priority: 29
+
   # --- Groq (istege bagli; varsayilan olarak en sona alindi) ---
   - name: groq-llama-3.3-70b
     litellm_id: groq/llama-3.3-70b-versatile

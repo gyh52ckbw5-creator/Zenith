@@ -1,19 +1,13 @@
-// Zenith icin minimal service worker: statik dosyalari cache'ler, boylece
-// iOS'ta "Ana Ekrana Ekle" ile acilan uygulama daha hizli yuklenir.
-// Sohbet API'si (/api/*) her zaman aga gider, cache'lenmez.
+// Zenith service worker.
+// ONCE AG (network-first): her zaman guncel surumu getirmeye calisir, boylece
+// yeni bir deploy telefonda aninda gorunur. Ag yoksa cache'e duser (cevrimdisi).
+// Sohbet API'si (/api/*) hic cache'lenmez.
 
-const CACHE_NAME = "zenith-static-v7";
-const STATIC_ASSETS = [
-  "/",
-  "/static/style.css",
-  "/static/app.js",
-  "/manifest.json",
-];
+const CACHE_NAME = "zenith-static-v8";
+const STATIC_ASSETS = ["/", "/static/style.css", "/static/app.js", "/manifest.json"];
 
 self.addEventListener("install", (event) => {
-  event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => cache.addAll(STATIC_ASSETS))
-  );
+  event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(STATIC_ASSETS)));
   self.skipWaiting();
 });
 
@@ -28,10 +22,17 @@ self.addEventListener("activate", (event) => {
 
 self.addEventListener("fetch", (event) => {
   const url = new URL(event.request.url);
-  if (url.pathname.startsWith("/api/")) {
-    return; // API cagrilarini asla cache'leme
+  if (url.pathname.startsWith("/api/") || event.request.method !== "GET") {
+    return; // API ve GET olmayanlar dogrudan aga gider
   }
+  // Once ag; basarili olursa cache'i tazele, basarisizsa cache'ten ver.
   event.respondWith(
-    caches.match(event.request).then((cached) => cached || fetch(event.request))
+    fetch(event.request)
+      .then((response) => {
+        const copy = response.clone();
+        caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy)).catch(() => {});
+        return response;
+      })
+      .catch(() => caches.match(event.request).then((cached) => cached || caches.match("/")))
   );
 });

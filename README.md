@@ -6,6 +6,11 @@ katmanları) tek bir kişisel asistanda birleştiren bir "Jarvis" tarzı
 asistandır. Hem terminalden hem de telefonundan (iOS dahil) bir web
 uygulaması / PWA olarak kullanılabilir.
 
+> **Sıfır kurulum:** Zenith artık **hiçbir API anahtarı olmadan** çalışır —
+> Pollinations (ücretsiz, anahtarsız) modeli varsayılan olarak devrededir.
+> Kendi ücretsiz `OPENROUTER_API_KEY`'ini eklersen Hermes 3 405B gibi daha
+> güçlü modeller ve konsey/vision özellikleri de açılır.
+
 Tek bir modele bağımlı kalmak yerine, Zenith şunları yapabilir:
 
 - **Tek model modu**: Öncelik sırasına göre en iyi kullanılabilir modeli

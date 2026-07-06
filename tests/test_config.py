@@ -34,6 +34,14 @@ def test_ollama_disabled_via_flag(monkeypatch):
     assert all(not m.is_available() for m in ollama_models)
 
 
+def test_pollinations_always_available_without_key(monkeypatch):
+    monkeypatch.setenv("VERCEL", "1")  # serverless olsa bile
+    config = load_config()
+    poll = [m for m in config.models if m.provider == "pollinations"]
+    assert poll
+    assert all(m.is_available() for m in poll)
+
+
 def test_key_gated_model_unavailable_without_env(monkeypatch):
     config = load_config()
     groq = next(m for m in config.models if m.provider == "groq")
