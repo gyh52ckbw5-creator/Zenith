@@ -59,12 +59,47 @@ trading_bot/
 │   ├── data.py        # Veri: sentetik üretim, CSV, Binance halka açık API (sadece okuma)
 │   ├── indicators.py  # SMA, EMA, RSI
 │   ├── strategies.py  # SMA kesişimi, RSI ortalamaya dönüş, al-ve-tut
-│   └── backtest.py    # Komisyon + kayma dahil, look-ahead'siz backtest motoru
+│   ├── backtest.py    # Komisyon + kayma dahil, look-ahead'siz backtest motoru
+│   ├── scanner.py     # OTOMATİK ARAŞTIRMA: sembol×strateji×parametre tarama + overfit tespiti
+│   ├── risk.py        # Pozisyon boyutu, stop-loss/take-profit, günlük zarar freni
+│   ├── exchange.py    # Binance spot istemcisi (paper/testnet/live)
+│   └── trader.py      # Otomatik işlem döngüsü: analiz → karar → risk → emir
 ├── run.py             # Komut satırı arayüzü
 └── README.md
 ```
 
 Hiçbir ek paket gerekmez (saf Python 3.10+).
+
+### Otomatik araştırma (scan)
+
+Bütün sembol × strateji × parametre kombinasyonlarını tarar. Veriyi
+%70 eğitim / %30 doğrulama diye böler; geçmişte parlak görünüp hiç
+görmediği veride çökenleri **OVERFIT!** diye işaretler:
+
+```bash
+python run.py scan --symbols BTCUSDT,ETHUSDT --interval 4h
+```
+
+### Otomatik işlem (trade) — üç kademeli güvenlik
+
+| Mod | Emir | Para | Anahtar |
+|---|---|---|---|
+| `paper` | simülasyon | sanal | gerekmez |
+| `testnet` | gerçek API emri | **sahte** (testnet.binance.vision) | ücretsiz testnet anahtarı |
+| `live` | gerçek API emri | **GERÇEK** | kendi Binance anahtarın + `--riski-anladim` bayrağı |
+
+```bash
+python run.py trade --mode paper --strategy sma --symbol BTCUSDT --interval 1h
+```
+
+Her turda: sinyal üretir → stop-loss/take-profit kontrol eder → pozisyonu
+risk kuralına göre boyutlandırır (varsayılan: işlem başına sermayenin %1'i
+riskte, tek pozisyon en çok %25, günlük zarar %5'i aşarsa o gün durur) →
+emri uygular ve `trader_state.json`'a kaydeder.
+
+`live` için: Binance'te API anahtarını **sadece spot trade izniyle** oluştur
+(para çekme iznini asla açma), `BINANCE_API_KEY` / `BINANCE_API_SECRET`
+ortam değişkenlerine koy. Anahtarları asla koda veya git'e yazma.
 
 ### Backtest çalıştır (internet gerekmez)
 

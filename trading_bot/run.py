@@ -8,10 +8,16 @@ Ornekler:
   # Gercek Binance verisiyle backtest (sadece veri okur, hesap gerekmez):
   python run.py backtest --strategy rsi --source binance --symbol BTCUSDT --interval 4h
 
-  # Paper trading: SANAL para ile canli fiyati izler, karar verir, dosyaya yazar:
-  python run.py paper --strategy sma --symbol BTCUSDT --interval 1h
+  # OTOMATIK ARASTIRMA: sembol x strateji x parametre tarar, overfit'i isaretler:
+  python run.py scan --symbols BTCUSDT,ETHUSDT --interval 4h
 
-Bu arac hicbir sekilde gercek emir GONDERMEZ.
+  # OTOMATIK ISLEM (risk yonetimli). Once paper, sonra testnet, en son live:
+  python run.py trade --mode paper   --strategy sma --symbol BTCUSDT
+  python run.py trade --mode testnet --strategy sma --symbol BTCUSDT
+  python run.py trade --mode live    --strategy sma --symbol BTCUSDT --riski-anladim
+
+testnet/live icin BINANCE_API_KEY ve BINANCE_API_SECRET ortam degiskenleri gerekir.
+paper ve testnet modlarinda GERCEK PARA YOKTUR. live mod GERCEK PARADIR.
 """
 
 from __future__ import annotations
@@ -24,8 +30,11 @@ import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from bot import backtest, data  # noqa: E402
+from bot import backtest, data, scanner  # noqa: E402
+from bot.exchange import BinanceSpot  # noqa: E402
+from bot.risk import RiskConfig  # noqa: E402
 from bot.strategies import STRATEGIES  # noqa: E402
+from bot.trader import Trader, TraderConfig  # noqa: E402
 
 STATE_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "paper_state.json")
 
@@ -120,6 +129,79 @@ def cmd_paper(args: argparse.Namespace) -> None:
         time.sleep(interval_sec)
 
 
+def cmd_scan(args: argparse.Namespace) -> None:
+    """Otomatik arastirma: kombinasyonlari tarar, dogrulama verisine gore siralar."""
+    print(UYARI)
+    symbols = [s.strip().upper() for s in args.symbols.split(",") if s.strip()]
+    if args.source == "synthetic":
+        def fetch(symbol: str) -> list[data.Candle]:
+            return data.synthetic(n=args.bars, seed=abs(hash(symbol)) % 10_000)
+    else:
+        ex = BinanceSpot(testnet=False)
+        def fetch(symbol: str) -> list[data.Candle]:
+            return ex.klines(symbol, args.interval, args.bars)
+
+    print(f"Taraniyor: {', '.join(symbols)} ({args.source}, {args.interval}, {args.bars} mum)")
+    print("Veri %70 egitim / %30 dogrulama olarak bolundu.\n")
+    results = scanner.scan(symbols, fetch)
+    for r in results:
+        print(r.row())
+
+    pick = scanner.best_pick(results)
+    print()
+    if pick:
+        print(f"Onerilen kombinasyon: {pick.symbol} + {pick.strategy}")
+        print("(dogrulama verisinde artida, overfit isareti yok, yeterli islem sayisi)")
+        print("Unutma: bu bile gelecegin garantisi DEGIL, sadece elemeyi gecen aday.")
+    else:
+        print("Hicbir kombinasyon dogrulama elemesini GECEMEDI.")
+        print("Dogru cevap bazen 'bugun islem yapma'dir - bot satan kimse bunu soylemez.")
+
+
+def cmd_trade(args: argparse.Namespace) -> None:
+    """Otomatik islem dongusu (paper/testnet/live)."""
+    print(UYARI)
+    risk = RiskConfig(
+        risk_pct_per_trade=args.risk_pct,
+        stop_loss_pct=args.stop_loss,
+        take_profit_pct=args.take_profit,
+        max_daily_loss_pct=args.max_daily_loss,
+    )
+    api_key = os.environ.get("BINANCE_API_KEY", "")
+    api_secret = os.environ.get("BINANCE_API_SECRET", "")
+
+    if args.mode == "live":
+        if not args.riski_anladim:
+            sys.exit(
+                "GERCEK PARA modu icin --riski-anladim bayragi zorunlu.\n"
+                "Bunu eklemeden once kendine sor: bu strateji testnet'te kac ay artida kaldi?\n"
+                "Cevap 'bilmiyorum' ise cevap hayirdir."
+            )
+        if not api_key or not api_secret:
+            sys.exit("live mod icin BINANCE_API_KEY ve BINANCE_API_SECRET gerekli.")
+        print(">>> GERCEK PARA MODU AKTIF <<<\n")
+        ex = BinanceSpot(api_key, api_secret, testnet=False)
+    elif args.mode == "testnet":
+        if not api_key or not api_secret:
+            sys.exit(
+                "testnet icin de anahtar gerekir (para sahtedir, anahtar ucretsizdir):\n"
+                "https://testnet.binance.vision adresinden alip BINANCE_API_KEY / "
+                "BINANCE_API_SECRET olarak ayarlayin."
+            )
+        ex = BinanceSpot(api_key, api_secret, testnet=True)
+    else:
+        ex = BinanceSpot(testnet=False)  # sadece halka acik veri okunur
+
+    cfg = TraderConfig(
+        symbol=args.symbol.upper(),
+        interval=args.interval,
+        mode=args.mode,
+        start_equity=args.equity,
+        risk=risk,
+    )
+    Trader(build_strategy(args), cfg, ex).run_forever()
+
+
 def main() -> None:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -145,9 +227,29 @@ def main() -> None:
     pt = sub.add_parser("paper", help="Sanal parayla canli sinyal takibi (emir gondermez)")
     common(pt)
 
+    sc = sub.add_parser("scan", help="Otomatik arastirma: sembol x strateji x parametre tarama")
+    sc.add_argument("--symbols", default="BTCUSDT,ETHUSDT")
+    sc.add_argument("--interval", default="4h")
+    sc.add_argument("--bars", type=int, default=1000)
+    sc.add_argument("--source", choices=["binance", "synthetic"], default="binance")
+
+    tr = sub.add_parser("trade", help="Otomatik islem dongusu (paper/testnet/live)")
+    common(tr)
+    tr.add_argument("--mode", choices=["paper", "testnet", "live"], default="paper")
+    tr.add_argument("--risk-pct", type=float, default=1.0, help="Islem basina %% risk")
+    tr.add_argument("--stop-loss", type=float, default=2.0, help="%% stop-loss")
+    tr.add_argument("--take-profit", type=float, default=4.0, help="%% kar al")
+    tr.add_argument("--max-daily-loss", type=float, default=5.0, help="Gunluk %% zarar freni")
+    tr.add_argument("--riski-anladim", action="store_true",
+                    help="live mod onayi: gercek para kaybedebilecegimi anladim")
+
     args = p.parse_args()
     if args.cmd == "backtest":
         cmd_backtest(args)
+    elif args.cmd == "scan":
+        cmd_scan(args)
+    elif args.cmd == "trade":
+        cmd_trade(args)
     else:
         cmd_paper(args)
 

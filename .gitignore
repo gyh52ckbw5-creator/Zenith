@@ -7,3 +7,5 @@ venv/
 *.egg-info/
 .zenith/
 .DS_Store
+trading_bot/paper_state.json
+trading_bot/trader_state.json
