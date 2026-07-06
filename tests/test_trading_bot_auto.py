@@ -44,8 +44,10 @@ def test_scan_ranks_by_out_of_sample():
     def fetch(symbol: str) -> list[data.Candle]:
         return data.synthetic(n=800, seed=abs(hash(symbol)) % 100)
 
+    from bot.scanner import default_grid
+
     results = scan(["AAA", "BBB"], fetch)
-    assert len(results) == 2 * 7  # 2 sembol x 7 kombinasyon
+    assert len(results) == 2 * len(default_grid())  # sembol sayisi x kombinasyon
     test_returns = [r.test_return_pct for r in results]
     assert test_returns == sorted(test_returns, reverse=True)
 
@@ -100,3 +102,52 @@ def test_load_env_does_not_override(tmp_path, monkeypatch):
     run.load_env(str(env_file))
     assert os.environ["FOO_TEST_KEY"] == "ortamdan"  # mevcut degisken ezilmez
     assert os.environ["BAR_TEST_KEY"] == "tirnakli"
+
+
+def test_new_strategies_produce_valid_positions():
+    from bot.backtest import run_backtest
+    from bot.strategies import DonchianBreakout, EmaCross
+
+    candles = data.synthetic(n=600, seed=8)
+    for strat in (EmaCross(12, 26), DonchianBreakout(20, 10)):
+        positions = strat.target_positions(candles)
+        assert len(positions) == len(candles)
+        assert set(positions) <= {0, 1}
+        res = run_backtest(candles, strat)
+        assert len(res.equity_curve) == len(candles)
+
+
+def test_trailing_exit():
+    from bot.risk import trailing_exit
+
+    cfg = RiskConfig(trailing_stop_pct=3.0)
+    assert trailing_exit(100.0, 96.9, cfg) is True   # tepe 100'den %3+ dusus
+    assert trailing_exit(100.0, 97.5, cfg) is False
+    off = RiskConfig(trailing_stop_pct=0.0)
+    assert trailing_exit(100.0, 50.0, off) is False  # kapaliyken asla tetiklenmez
+
+
+def test_walk_forward_segments():
+    from bot.scanner import walk_forward
+    from bot.strategies import SmaCross
+
+    candles = data.synthetic(n=1000, seed=9)
+    returns = walk_forward(candles, SmaCross(10, 30), segments=5)
+    assert len(returns) == 5
+    with pytest.raises(ValueError):
+        walk_forward(candles[:100], SmaCross(10, 30), segments=5)  # dilim cok kucuk
+
+
+def test_profit_factor():
+    from bot.backtest import Result, Trade
+
+    res = Result(
+        strategy="x", start_equity=1, end_equity=1, total_return_pct=0,
+        buy_hold_return_pct=0, max_drawdown_pct=0,
+        trades=[
+            Trade(0, 1, 1, 1, pnl_pct=6.0),
+            Trade(0, 1, 1, 1, pnl_pct=-2.0),
+            Trade(0, 1, 1, 1, pnl_pct=-1.0),
+        ],
+    )
+    assert abs(res.profit_factor - 2.0) < 1e-9

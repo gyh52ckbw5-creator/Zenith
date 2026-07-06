@@ -19,7 +19,7 @@ from dataclasses import dataclass
 
 from .exchange import BinanceSpot, ExchangeError
 from .notify import send_telegram
-from .risk import RiskConfig, daily_kill_switch, exit_reason, position_size_quote
+from .risk import RiskConfig, daily_kill_switch, exit_reason, position_size_quote, trailing_exit
 from .strategies import Strategy
 
 _BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -99,6 +99,7 @@ class Trader:
             qty = float(order.get("executedQty", 0))
             self.state["qty"] += qty
         self.state["entry_price"] = price
+        self.state["peak_price"] = price
         self._log(f"ALIM {quote_amount:.2f} karsiligi @ {price}", self.equity(price), notify=True)
 
     def _sell_all(self, price: float, reason: str) -> None:
@@ -112,6 +113,7 @@ class Trader:
         self.state["qty"] = 0.0
         pnl = 100.0 * (price / self.state["entry_price"] - 1) if self.state["entry_price"] else 0.0
         self.state["entry_price"] = 0.0
+        self.state["peak_price"] = 0.0
         self._log(f"SATIS ({reason}) @ {price}, islem k/z: {pnl:+.2f}%", self.equity(price), notify=True)
 
     # -- tek tur -----------------------------------------------------------
@@ -141,9 +143,13 @@ class Trader:
 
         in_position = self.state["qty"] > 0
 
-        # stop-loss / take-profit sinyalden once kontrol edilir
+        # stop-loss / take-profit / iz suren stop sinyalden once kontrol edilir
         if in_position:
+            peak = max(self.state.get("peak_price", 0.0), self.state["entry_price"], price)
+            self.state["peak_price"] = peak
             reason = exit_reason(self.state["entry_price"], price, self.risk)
+            if not reason and trailing_exit(peak, price, self.risk):
+                reason = "trailing_stop"
             if reason:
                 self._sell_all(price, reason)
                 return

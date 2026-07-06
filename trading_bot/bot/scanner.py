@@ -17,7 +17,7 @@ from typing import Callable
 
 from .backtest import run_backtest
 from .data import Candle
-from .strategies import RsiReversion, SmaCross, Strategy
+from .strategies import DonchianBreakout, EmaCross, RsiReversion, SmaCross, Strategy
 
 
 def default_grid() -> list[Strategy]:
@@ -25,8 +25,12 @@ def default_grid() -> list[Strategy]:
     grid: list[Strategy] = []
     for fast, slow in [(10, 30), (20, 50), (50, 100), (20, 100)]:
         grid.append(SmaCross(fast, slow))
+    for fast, slow in [(12, 26), (9, 50)]:
+        grid.append(EmaCross(fast, slow))
     for period, lo, hi in [(14, 30, 70), (7, 25, 75), (21, 35, 65)]:
         grid.append(RsiReversion(period, lo, hi))
+    for entry, exit_ in [(20, 10), (55, 20)]:  # klasik Turtle parametreleri
+        grid.append(DonchianBreakout(entry, exit_))
     return grid
 
 
@@ -88,6 +92,33 @@ def scan(
             )
     results.sort(key=lambda r: r.test_return_pct, reverse=True)
     return results
+
+
+def walk_forward(
+    candles: list[Candle],
+    strategy: Strategy,
+    segments: int = 5,
+    commission_pct: float = 0.1,
+    slippage_pct: float = 0.05,
+) -> list[float]:
+    """Walk-forward testi: veriyi ardisik dilimlere boler, stratejiyi her
+    dilimde AYRI calistirir ve dilim getirilerini dondurur.
+
+    Tek egitim/dogrulama bolmesi sans eseri iyi cikabilir; strateji ancak
+    dilimlerin cogunda ayakta kaliyorsa guvenilirdir. Profesyonel fonlarin
+    standart dogrulama yontemi budur.
+    """
+    if segments < 2:
+        raise ValueError("segments en az 2 olmali")
+    seg_len = len(candles) // segments
+    if seg_len < 60:
+        raise ValueError(f"Dilim basina en az 60 mum gerekir ({seg_len} dustu)")
+    returns: list[float] = []
+    for i in range(segments):
+        chunk = candles[i * seg_len:(i + 1) * seg_len]
+        r = run_backtest(chunk, strategy, commission_pct=commission_pct, slippage_pct=slippage_pct)
+        returns.append(r.total_return_pct)
+    return returns
 
 
 def best_pick(results: list[ScanResult]) -> ScanResult | None:

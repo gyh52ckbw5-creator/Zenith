@@ -184,6 +184,7 @@ def cmd_trade(args: argparse.Namespace) -> None:
         stop_loss_pct=args.stop_loss,
         take_profit_pct=args.take_profit,
         max_daily_loss_pct=args.max_daily_loss,
+        trailing_stop_pct=args.trailing_stop,
     )
     api_key = os.environ.get("BINANCE_API_KEY", "")
     api_secret = os.environ.get("BINANCE_API_SECRET", "")
@@ -230,6 +231,67 @@ def cmd_trade(args: argparse.Namespace) -> None:
         for sym in symbols
     ]
     run_many(traders)
+
+
+def cmd_walkforward(args: argparse.Namespace) -> None:
+    """Walk-forward testi: strateji ardisik zaman dilimlerinin kacinda ayakta?"""
+    print(UYARI)
+    candles = get_candles(args)
+    strategy = build_strategy(args)
+    returns = scanner.walk_forward(candles, strategy, segments=args.segments)
+    print(f"Strateji: {strategy.name}, veri: {args.source} ({len(candles)} mum), "
+          f"{args.segments} dilim\n")
+    positive = 0
+    for i, r in enumerate(returns, 1):
+        bar = "#" * min(40, int(abs(r)))
+        sign = "+" if r >= 0 else "-"
+        if r >= 0:
+            positive += 1
+        print(f"  Dilim {i}: {r:+8.2f}%  {sign}{bar}")
+    print(f"\nArtida biten dilim: {positive}/{len(returns)}")
+    if positive == len(returns):
+        print("Tum dilimlerde artida - umut verici ama yine de garanti degil.")
+    elif positive >= len(returns) * 0.6:
+        print("Cogu dilimde ayakta kalmis; derinlemesine incelemeye deger.")
+    else:
+        print("Dilimlerin cogunda zarar: tek bolmede iyi gorunduyse SANS'ti.")
+        print("Gercek parayla bu stratejiyi calistirmak icin hicbir neden yok.")
+
+
+def cmd_report(args: argparse.Namespace) -> None:
+    """trader_state_*.json dosyalarindan portfoy durumu raporu."""
+    import glob
+
+    base = os.path.dirname(os.path.abspath(__file__))
+    files = sorted(glob.glob(os.path.join(base, "trader_state_*.json")))
+    if not files:
+        sys.exit("Henuz islem durumu yok. Once `trade` komutunu calistir.")
+    ex = BinanceSpot(testnet=False)
+    total = 0.0
+    print(f"{'Sembol':<10} {'Nakit':>10} {'Adet':>12} {'Deger':>10} {'Pozisyon'}")
+    for path in files:
+        with open(path, encoding="utf-8") as f:
+            st = json.load(f)
+        symbol = os.path.basename(path).replace("trader_state_", "").replace(".json", "")
+        qty = st.get("qty", 0.0)
+        value = 0.0
+        pos = "nakitte"
+        if qty > 0:
+            try:
+                price = ex.price(symbol)
+                value = qty * price
+                entry = st.get("entry_price", 0.0)
+                pnl = 100.0 * (price / entry - 1) if entry else 0.0
+                pos = f"long @ {entry} (k/z {pnl:+.2f}%)"
+            except Exception:
+                pos = "long (fiyat alinamadi)"
+        equity = st.get("cash", 0.0) + value
+        total += equity
+        print(f"{symbol:<10} {st.get('cash', 0.0):>10.2f} {qty:>12.6f} {value:>10.2f} {pos}")
+        buys = sum(1 for line in st.get("log", []) if "ALIM" in line)
+        sells = sum(1 for line in st.get("log", []) if "SATIS" in line)
+        print(f"{'':<10} islem gecmisi: {buys} alim, {sells} satis")
+    print(f"\nToplam portfoy degeri: {total:.2f}")
 
 
 def cmd_notify_test(args: argparse.Namespace) -> None:
@@ -309,9 +371,19 @@ def main() -> None:
     tr.add_argument("--stop-loss", type=float, default=2.0, help="%% stop-loss")
     tr.add_argument("--take-profit", type=float, default=4.0, help="%% kar al")
     tr.add_argument("--max-daily-loss", type=float, default=5.0, help="Gunluk %% zarar freni")
+    tr.add_argument("--trailing-stop", type=float, default=0.0,
+                    help="Iz suren stop %% (tepe fiyattan geri cekilme; 0 = kapali)")
     tr.add_argument("--riski-anladim", action="store_true",
                     help="live mod onayi: gercek para kaybedebilecegimi anladim")
 
+    wf = sub.add_parser("walkforward", help="Stratejiyi ardisik zaman dilimlerinde dogrula")
+    common(wf)
+    wf.add_argument("--source", choices=["synthetic", "csv", "binance"], default="binance")
+    wf.add_argument("--csv", help="CSV dosya yolu (--source csv icin)")
+    wf.add_argument("--seed", type=int, default=42)
+    wf.add_argument("--segments", type=int, default=5, help="Dilim sayisi")
+
+    sub.add_parser("report", help="Sanal portfoy durum raporu")
     sub.add_parser("notify-test", help="Telegram baglantisini kur ve test mesaji at")
 
     args = p.parse_args()
@@ -321,6 +393,10 @@ def main() -> None:
         cmd_scan(args)
     elif args.cmd == "trade":
         cmd_trade(args)
+    elif args.cmd == "walkforward":
+        cmd_walkforward(args)
+    elif args.cmd == "report":
+        cmd_report(args)
     elif args.cmd == "notify-test":
         cmd_notify_test(args)
     else:

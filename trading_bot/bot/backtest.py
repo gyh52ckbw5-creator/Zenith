@@ -49,6 +49,16 @@ class Result:
         return 100.0 * sum(1 for t in closed if t.pnl_pct > 0) / len(closed)
 
     @property
+    def profit_factor(self) -> float:
+        """Toplam kar / toplam zarar. 1'in alti para kaybeder;
+        saglam stratejilerde tipik olarak 1.3-2.0 arasi gorulur."""
+        wins = sum(t.pnl_pct for t in self.trades if t.pnl_pct > 0)
+        losses = abs(sum(t.pnl_pct for t in self.trades if t.pnl_pct < 0))
+        if losses == 0:
+            return float("inf") if wins > 0 else 0.0
+        return wins / losses
+
+    @property
     def sharpe(self) -> float:
         """Bar bazli getirilerden yillik varsayimsiz, kaba Sharpe orani."""
         rets = [
@@ -74,6 +84,7 @@ class Result:
             f"Maksimum dusus (DD) : {self.max_drawdown_pct:.2f}%",
             f"Islem sayisi        : {self.n_trades}",
             f"Kazanma orani       : {self.win_rate_pct:.1f}%",
+            f"Kar faktoru         : {self.profit_factor:.2f}",
             f"Sharpe (kaba)       : {self.sharpe:.2f}",
         ]
         return "\n".join(lines)

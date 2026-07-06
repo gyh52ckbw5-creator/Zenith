@@ -188,7 +188,30 @@ kendin keşfedeceksin:
    yetkili kurum (kaldıraçlı işlemler için) ve pozisyon başına sermayenin
    %1-2'sinden fazla risk yok. "Zengin olma" değil "hayatta kalma" hedefi.
 
-## 6. Yasal uyarı
+## 6. Yol haritası (plan/proje)
+
+**Bitenler:**
+- [x] Backtest motoru (komisyon/kayma dahil, look-ahead'siz) + kâr faktörü, Sharpe, drawdown
+- [x] 4 strateji: SMA kesişimi, EMA kesişimi, RSI dönüşü, Donchian kırılımı (Turtle)
+- [x] Otomatik tarama (`scan`): eğitim/doğrulama ayrımı + overfit tespiti
+- [x] **Walk-forward testi** (`walkforward`): profesyonel fonların doğrulama standardı —
+  tek bölme şans eseri iyi çıkabilir, strateji ancak ardışık dilimlerin çoğunda
+  ayakta kalıyorsa güvenilirdir
+- [x] Risk yönetimi: pozisyon boyutu, stop-loss/take-profit, **iz süren stop**
+  (`--trailing-stop`), günlük zarar freni
+- [x] Otomatik işlem döngüsü: paper/testnet/live, çoklu sembol, kesinti dayanıklılığı
+- [x] Telegram bildirimleri + tek komutla kurulum (`notify-test`)
+- [x] Portföy raporu (`report`)
+- [x] MT5 Expert Advisor (MQL5) + kurulum rehberi
+
+**Sırada (öncelik sırasıyla):**
+- [ ] ATR tabanlı dinamik stop (oynaklığa göre genişleyen/daralan stop mesafesi)
+- [ ] Trend filtresi (SMA200 üstündeyken al sinyallerini kabul et — yanlış kırılımı azaltır)
+- [ ] İşlem günlüğü CSV çıktısı + equity eğrisi grafiği
+- [ ] Sunucuda 7/24 çalıştırma rehberi (systemd servisi)
+- [ ] Binance testnet'te 1-2 aylık gerçek zamanlı doğrulama koşusu ← **asıl kilometre taşı**
+
+## 7. Yasal uyarı
 
 Bu yazılım ve belge yatırım tavsiyesi değildir; yalnızca eğitim amaçlıdır.
 Kaldıraçlı işlemler sermayenin tamamının kaybıyla sonuçlanabilir. Türkiye'de
