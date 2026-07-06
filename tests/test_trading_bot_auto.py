@@ -72,3 +72,19 @@ def test_binance_signature_matches_reference():
     assert sign(query, secret) == (
         "c8db56825ae71d6d79447849e617115f4a920fa2acdcab2b053c4b2838bd6b71"
     )
+
+
+def test_notify_silent_without_config(monkeypatch):
+    from bot.notify import send_telegram, telegram_configured
+
+    monkeypatch.delenv("TELEGRAM_BOT_TOKEN", raising=False)
+    monkeypatch.delenv("TELEGRAM_CHAT_ID", raising=False)
+    assert telegram_configured() is False
+    assert send_telegram("test") is False  # yapilandirma yoksa sessizce False
+
+
+def test_trader_state_path_per_symbol():
+    from bot.trader import state_path
+
+    assert state_path("btcusdt").endswith("trader_state_BTCUSDT.json")
+    assert state_path("ETHUSDT") != state_path("BTCUSDT")

@@ -18,12 +18,17 @@ import time
 from dataclasses import dataclass
 
 from .exchange import BinanceSpot, ExchangeError
+from .notify import send_telegram
 from .risk import RiskConfig, daily_kill_switch, exit_reason, position_size_quote
 from .strategies import Strategy
 
-STATE_FILE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "trader_state.json")
+_BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 INTERVAL_SEC = {"1m": 60, "5m": 300, "15m": 900, "30m": 1800, "1h": 3600, "4h": 14400, "1d": 86400}
+
+
+def state_path(symbol: str) -> str:
+    return os.path.join(_BASE_DIR, f"trader_state_{symbol.upper()}.json")
 
 
 @dataclass
@@ -42,12 +47,13 @@ class Trader:
         self.risk = cfg.risk or RiskConfig()
         self.risk.validate()
         self.ex = exchange
+        self.state_file = state_path(cfg.symbol)
         self.state = self._load_state()
 
     # -- durum -----------------------------------------------------------
     def _load_state(self) -> dict:
-        if os.path.exists(STATE_FILE):
-            with open(STATE_FILE, encoding="utf-8") as f:
+        if os.path.exists(self.state_file):
+            with open(self.state_file, encoding="utf-8") as f:
                 return json.load(f)
         return {
             "cash": self.cfg.start_equity,  # paper mod sanal bakiyesi
@@ -60,14 +66,16 @@ class Trader:
         }
 
     def _save_state(self) -> None:
-        with open(STATE_FILE, "w", encoding="utf-8") as f:
+        with open(self.state_file, "w", encoding="utf-8") as f:
             json.dump(self.state, f, indent=2)
 
-    def _log(self, msg: str, equity: float) -> None:
+    def _log(self, msg: str, equity: float, notify: bool = False) -> None:
         now = time.strftime("%Y-%m-%d %H:%M:%S")
-        line = f"[{now}] [{self.cfg.mode}] {msg} | toplam: {equity:.2f}"
+        line = f"[{now}] [{self.cfg.mode}] [{self.cfg.symbol}] {msg} | toplam: {equity:.2f}"
         print(line)
         self.state["log"] = (self.state["log"] + [line])[-500:]
+        if notify:  # sadece onemli olaylar telefona gider, "bekle" mesajlari gitmez
+            send_telegram(line)
 
     # -- bakiye ------------------------------------------------------------
     def equity(self, price: float) -> float:
@@ -91,7 +99,7 @@ class Trader:
             qty = float(order.get("executedQty", 0))
             self.state["qty"] += qty
         self.state["entry_price"] = price
-        self._log(f"ALIM {quote_amount:.2f} karsiligi @ {price}", self.equity(price))
+        self._log(f"ALIM {quote_amount:.2f} karsiligi @ {price}", self.equity(price), notify=True)
 
     def _sell_all(self, price: float, reason: str) -> None:
         qty = self.state["qty"]
@@ -104,7 +112,7 @@ class Trader:
         self.state["qty"] = 0.0
         pnl = 100.0 * (price / self.state["entry_price"] - 1) if self.state["entry_price"] else 0.0
         self.state["entry_price"] = 0.0
-        self._log(f"SATIS ({reason}) @ {price}, islem k/z: {pnl:+.2f}%", self.equity(price))
+        self._log(f"SATIS ({reason}) @ {price}, islem k/z: {pnl:+.2f}%", self.equity(price), notify=True)
 
     # -- tek tur -----------------------------------------------------------
     def step(self) -> None:
@@ -124,7 +132,11 @@ class Trader:
         if daily_kill_switch(self.state["day_start_equity"], equity, self.risk):
             self._sell_all(price, "gunluk zarar freni")
             self.state["halted_day"] = today
-            self._log(f"KILL SWITCH: gunluk zarar > %{self.risk.max_daily_loss_pct}, duruldu", self.equity(price))
+            self._log(
+                f"KILL SWITCH: gunluk zarar > %{self.risk.max_daily_loss_pct}, duruldu",
+                self.equity(price),
+                notify=True,
+            )
             return
 
         in_position = self.state["qty"] > 0
@@ -148,21 +160,37 @@ class Trader:
             )
 
     def run_forever(self) -> None:
-        sleep_s = INTERVAL_SEC.get(self.cfg.interval, 3600)
-        print(
-            f"Bot basladi: {self.cfg.symbol} {self.cfg.interval}, strateji {self.strategy.name}, "
-            f"mod: {self.cfg.mode.upper()}\n"
-            f"Risk: islem basina %{self.risk.risk_pct_per_trade}, stop %{self.risk.stop_loss_pct}, "
-            f"hedef %{self.risk.take_profit_pct}, gunluk fren %{self.risk.max_daily_loss_pct}\n"
-        )
-        while True:
+        run_many([self])
+
+
+def run_many(traders: list["Trader"]) -> None:
+    """Birden fazla sembolu ayni dongude izler. Ctrl+C ile durdurulur."""
+    if not traders:
+        return
+    sleep_s = min(INTERVAL_SEC.get(t.cfg.interval, 3600) for t in traders)
+    first = traders[0]
+    print(
+        f"Bot basladi: {', '.join(t.cfg.symbol for t in traders)} "
+        f"({first.cfg.interval}), strateji {first.strategy.name}, mod: {first.cfg.mode.upper()}\n"
+        f"Risk: islem basina %{first.risk.risk_pct_per_trade}, stop %{first.risk.stop_loss_pct}, "
+        f"hedef %{first.risk.take_profit_pct}, gunluk fren %{first.risk.max_daily_loss_pct}\n"
+    )
+    while True:
+        for t in traders:
             try:
-                self.step()
-                self._save_state()
+                t.step()
+                t._save_state()
             except ExchangeError as e:
-                print(f"Borsa hatasi: {e} - {sleep_s}s sonra tekrar")
+                print(f"[{t.cfg.symbol}] borsa hatasi: {e} - sonraki turda tekrar")
             except KeyboardInterrupt:
-                self._save_state()
-                print("\nDurduruldu, durum kaydedildi.")
+                for tr in traders:
+                    tr._save_state()
+                print("\nDurduruldu, durumlar kaydedildi.")
                 return
+        try:
             time.sleep(sleep_s)
+        except KeyboardInterrupt:
+            for tr in traders:
+                tr._save_state()
+            print("\nDurduruldu, durumlar kaydedildi.")
+            return

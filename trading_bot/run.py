@@ -34,7 +34,8 @@ from bot import backtest, data, scanner  # noqa: E402
 from bot.exchange import BinanceSpot  # noqa: E402
 from bot.risk import RiskConfig  # noqa: E402
 from bot.strategies import STRATEGIES  # noqa: E402
-from bot.trader import Trader, TraderConfig  # noqa: E402
+from bot.notify import telegram_configured  # noqa: E402
+from bot.trader import Trader, TraderConfig, run_many  # noqa: E402
 
 STATE_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "paper_state.json")
 
@@ -192,14 +193,26 @@ def cmd_trade(args: argparse.Namespace) -> None:
     else:
         ex = BinanceSpot(testnet=False)  # sadece halka acik veri okunur
 
-    cfg = TraderConfig(
-        symbol=args.symbol.upper(),
-        interval=args.interval,
-        mode=args.mode,
-        start_equity=args.equity,
-        risk=risk,
-    )
-    Trader(build_strategy(args), cfg, ex).run_forever()
+    symbols = [s.strip().upper() for s in (args.symbols or args.symbol).split(",") if s.strip()]
+    if telegram_configured():
+        print("Telegram bildirimi AKTIF: islemler telefonuna gidecek.\n")
+    else:
+        print("Telegram bildirimi kapali (TELEGRAM_BOT_TOKEN/TELEGRAM_CHAT_ID ayarlanmamis).\n")
+    traders = [
+        Trader(
+            build_strategy(args),
+            TraderConfig(
+                symbol=sym,
+                interval=args.interval,
+                mode=args.mode,
+                start_equity=args.equity / len(symbols),  # paper: sanal bakiye esit bolunur
+                risk=risk,
+            ),
+            ex,
+        )
+        for sym in symbols
+    ]
+    run_many(traders)
 
 
 def main() -> None:
@@ -235,6 +248,7 @@ def main() -> None:
 
     tr = sub.add_parser("trade", help="Otomatik islem dongusu (paper/testnet/live)")
     common(tr)
+    tr.add_argument("--symbols", default="", help="Coklu sembol: BTCUSDT,ETHUSDT,SOLUSDT")
     tr.add_argument("--mode", choices=["paper", "testnet", "live"], default="paper")
     tr.add_argument("--risk-pct", type=float, default=1.0, help="Islem basina %% risk")
     tr.add_argument("--stop-loss", type=float, default=2.0, help="%% stop-loss")
