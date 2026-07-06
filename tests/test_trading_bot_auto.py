@@ -88,3 +88,15 @@ def test_trader_state_path_per_symbol():
 
     assert state_path("btcusdt").endswith("trader_state_BTCUSDT.json")
     assert state_path("ETHUSDT") != state_path("BTCUSDT")
+
+
+def test_load_env_does_not_override(tmp_path, monkeypatch):
+    import run
+
+    env_file = tmp_path / ".env"
+    env_file.write_text("FOO_TEST_KEY=dosyadan\nBAR_TEST_KEY='tirnakli'\n# yorum\n")
+    monkeypatch.setenv("FOO_TEST_KEY", "ortamdan")
+    monkeypatch.delenv("BAR_TEST_KEY", raising=False)
+    run.load_env(str(env_file))
+    assert os.environ["FOO_TEST_KEY"] == "ortamdan"  # mevcut degisken ezilmez
+    assert os.environ["BAR_TEST_KEY"] == "tirnakli"

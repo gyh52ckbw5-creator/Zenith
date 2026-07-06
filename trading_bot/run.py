@@ -34,10 +34,27 @@ from bot import backtest, data, scanner  # noqa: E402
 from bot.exchange import BinanceSpot  # noqa: E402
 from bot.risk import RiskConfig  # noqa: E402
 from bot.strategies import STRATEGIES  # noqa: E402
-from bot.notify import telegram_configured  # noqa: E402
+from bot.notify import discover_chat_ids, send_telegram, telegram_configured  # noqa: E402
 from bot.trader import Trader, TraderConfig, run_many  # noqa: E402
 
 STATE_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "paper_state.json")
+
+
+def load_env(path: str = "") -> None:
+    """trading_bot/.env dosyasindaki KEY=VALUE satirlarini ortama yukler.
+
+    Var olan ortam degiskenlerini EZMEZ. .env git'e gitmez (.gitignore'da).
+    """
+    path = path or os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
+    if not os.path.exists(path):
+        return
+    with open(path, encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, value = line.split("=", 1)
+            os.environ.setdefault(key.strip(), value.strip().strip('"').strip("'"))
 
 UYARI = (
     "*** UYARI: Bu yazilim egitim amaclidir, gercek emir gondermez. ***\n"
@@ -215,7 +232,45 @@ def cmd_trade(args: argparse.Namespace) -> None:
     run_many(traders)
 
 
+def cmd_notify_test(args: argparse.Namespace) -> None:
+    """Telegram baglantisini kurar/dogrular: chat ID bulur, test mesaji atar."""
+    token = os.environ.get("TELEGRAM_BOT_TOKEN", "")
+    if not token:
+        sys.exit(
+            "TELEGRAM_BOT_TOKEN yok.\n"
+            "1) Telegram'da @BotFather -> /newbot ile bot olustur, token'i al\n"
+            "2) trading_bot/.env dosyasina yaz: TELEGRAM_BOT_TOKEN=<token>\n"
+            "3) Bu komutu tekrar calistir."
+        )
+    chat_id = os.environ.get("TELEGRAM_CHAT_ID", "")
+    if not chat_id:
+        print("TELEGRAM_CHAT_ID ayarli degil, botuna yazanlardan bulmayi deniyorum...")
+        found = discover_chat_ids(token)
+        if not found:
+            sys.exit(
+                "Sohbet bulunamadi. Telegram'da kendi botuna herhangi bir mesaj at\n"
+                "(ör. 'selam'), sonra bu komutu TEKRAR calistir.\n"
+                "Not: mesajlar 24 saat icinde okunmazsa Telegram listeden siler."
+            )
+        print("Bulunan sohbetler:")
+        for cid, name in found:
+            print(f"  chat_id={cid}  ({name})")
+        chat_id = str(found[0][0])
+        os.environ["TELEGRAM_CHAT_ID"] = chat_id
+        print(f"\nIlk bulunan kullanildi: {chat_id}")
+        print(f"Kalici olmasi icin trading_bot/.env dosyasina ekle: TELEGRAM_CHAT_ID={chat_id}\n")
+    ok = send_telegram(
+        "Zenith trading bot baglanti testi basarili! "
+        "Islem acilinca/kapaninca buradan haber alacaksin."
+    )
+    if ok:
+        print("Test mesaji GONDERILDI - telefonuna bak!")
+    else:
+        sys.exit("Test mesaji gonderilemedi. Token/chat_id degerlerini kontrol et.")
+
+
 def main() -> None:
+    load_env()
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = p.add_subparsers(dest="cmd", required=True)
 
@@ -257,6 +312,8 @@ def main() -> None:
     tr.add_argument("--riski-anladim", action="store_true",
                     help="live mod onayi: gercek para kaybedebilecegimi anladim")
 
+    sub.add_parser("notify-test", help="Telegram baglantisini kur ve test mesaji at")
+
     args = p.parse_args()
     if args.cmd == "backtest":
         cmd_backtest(args)
@@ -264,6 +321,8 @@ def main() -> None:
         cmd_scan(args)
     elif args.cmd == "trade":
         cmd_trade(args)
+    elif args.cmd == "notify-test":
+        cmd_notify_test(args)
     else:
         cmd_paper(args)
 

@@ -101,6 +101,34 @@ emri uygular ve `trader_state.json`'a kaydeder.
 (para çekme iznini asla açma), `BINANCE_API_KEY` / `BINANCE_API_SECRET`
 ortam değişkenlerine koy. Anahtarları asla koda veya git'e yazma.
 
+### Ayarlar: `.env` dosyası
+
+Anahtarlar `trading_bot/.env` dosyasından otomatik yüklenir (git'e gitmez):
+
+```bash
+cp .env.example .env   # sonra icini kendi degerlerinle doldur
+```
+
+### Telegram bildirimi kurulumu (tek komut)
+
+1. Telegram'da **@BotFather** → `/newbot` → token'ı al, `.env`'e
+   `TELEGRAM_BOT_TOKEN=...` olarak yaz.
+2. Telegram'da **kendi botuna** herhangi bir mesaj at (ör. "selam").
+3. Çalıştır:
+
+```bash
+python run.py notify-test
+```
+
+Komut chat ID'ni kendisi bulur, sana söyler ve telefonuna test mesajı
+atar. Bulduğu ID'yi `.env`'e `TELEGRAM_CHAT_ID=...` olarak ekle — artık
+bot her işlem açtığında/kapattığında ve günlük zarar freni devreye
+girdiğinde telefonuna mesaj gelir.
+
+> Güvenlik: bot token'ını kimseyle paylaşma (ekran görüntüsü dahil).
+> Paylaştıysan @BotFather → `/mybots` → API Token → **Revoke** ile
+> yenile ve `.env`'i güncelle.
+
 ### Backtest çalıştır (internet gerekmez)
 
 ```bash

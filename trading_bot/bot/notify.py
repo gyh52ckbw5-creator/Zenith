@@ -25,6 +25,31 @@ def telegram_configured() -> bool:
     return bool(os.environ.get("TELEGRAM_BOT_TOKEN") and os.environ.get("TELEGRAM_CHAT_ID"))
 
 
+def discover_chat_ids(token: str = "") -> list[tuple[int, str]]:
+    """Bota son 24 saatte yazan sohbetlerin (id, isim) listesini dondurur.
+
+    Kullanim: bota Telegram'dan herhangi bir mesaj at, sonra bunu cagir.
+    """
+    token = token or os.environ.get("TELEGRAM_BOT_TOKEN", "")
+    if not token:
+        return []
+    try:
+        with urllib.request.urlopen(
+            f"https://api.telegram.org/bot{token}/getUpdates", timeout=10
+        ) as resp:
+            data = json.loads(resp.read().decode())
+    except Exception:  # noqa: BLE001
+        return []
+    seen: dict[int, str] = {}
+    for update in data.get("result", []):
+        msg = update.get("message") or update.get("edited_message") or {}
+        chat = msg.get("chat") or {}
+        if "id" in chat:
+            name = chat.get("first_name") or chat.get("title") or chat.get("username") or "?"
+            seen[int(chat["id"])] = str(name)
+    return list(seen.items())
+
+
 def send_telegram(text: str) -> bool:
     """Mesaji gonderir; yapilandirma yoksa veya hata olursa False doner.
 
