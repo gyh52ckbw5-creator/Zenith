@@ -12,6 +12,7 @@ import json
 import os
 import re
 from dataclasses import dataclass
+from math import log
 from pathlib import Path
 
 CHUNK_SIZE = 800  # karakter
@@ -119,20 +120,39 @@ class DocStore:
         return not self.chunks
 
     def retrieve(self, query: str, top_k: int = TOP_K) -> list[Chunk]:
+        """TF-IDF benzeri agirlikli getirme: nadir (ayirt edici) kelimeler daha
+        cok puan getirir; onek eslesmesi Turkce eklerini tolere eder."""
         q_tokens = _tokens(query)
         if not q_tokens or not self.chunks:
             return []
+
+        # Her chunk'in jetonlarini bir kez hesapla + belge frekansi (DF).
+        chunk_tokens = [_tokens(c["text"]) for c in self.chunks]
+        n = len(self.chunks)
+        df: dict[str, int] = {}
+        for toks in chunk_tokens:
+            for t in toks:
+                df[t] = df.get(t, 0) + 1
+
+        def idf(term: str) -> float:
+            # Bir sorgu kelimesinin bir chunk kelimesiyle eslesen en yuksek IDF'i.
+            best = 0.0
+            for ct, count in df.items():
+                if term == ct or (len(term) >= 4 and (ct.startswith(term) or term.startswith(ct))):
+                    best = max(best, log((n + 1) / (count + 0.5)))
+            return best
+
+        q_idf = {qt: idf(qt) for qt in q_tokens}
+        total = sum(q_idf.values()) or 1.0
+
         scored: list[tuple[float, dict]] = []
-        for c in self.chunks:
-            c_tokens = _tokens(c["text"])
+        for c, c_tokens in zip(self.chunks, chunk_tokens):
             if not c_tokens:
                 continue
-            matches = sum(1 for qt in q_tokens if _token_matches(qt, c_tokens))
-            if matches == 0:
+            score = sum(w for qt, w in q_idf.items() if _token_matches(qt, c_tokens))
+            if score <= 0:
                 continue
-            # Sorgu kapsamina gore normalize edilmis puan.
-            score = matches / len(q_tokens)
-            scored.append((score, c))
+            scored.append((score / total, c))
         scored.sort(key=lambda x: x[0], reverse=True)
         return [Chunk(doc=c["doc"], text=c["text"]) for _, c in scored[:top_k]]
 
