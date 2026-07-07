@@ -19,6 +19,8 @@ class RiskConfig:
     max_position_pct: float = 25.0    # tek pozisyon sermayenin en fazla bu kadari
     max_daily_loss_pct: float = 5.0   # gun ici toplam zarar bunu asarsa DUR
     trailing_stop_pct: float = 0.0    # tepe fiyattan bu kadar dusunce kes (0 = kapali)
+    atr_stop_mult: float = 0.0        # stop = giris - ATR x bu katsayi (0 = kapali,
+                                      # aciksa sabit stop_loss_pct yerine gecer)
 
     def validate(self) -> None:
         if not (0 < self.risk_pct_per_trade <= 5):

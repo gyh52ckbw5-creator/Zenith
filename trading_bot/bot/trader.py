@@ -17,7 +17,9 @@ import os
 import time
 from dataclasses import dataclass
 
+from .data import Candle
 from .exchange import BinanceSpot, ExchangeError
+from .indicators import atr
 from .notify import send_telegram
 from .risk import RiskConfig, daily_kill_switch, exit_reason, position_size_quote, trailing_exit
 from .strategies import Strategy
@@ -86,7 +88,7 @@ class Trader:
         return balances.get("USDT", 0.0) + balances.get(base, 0.0) * price
 
     # -- emirler -----------------------------------------------------------
-    def _buy(self, price: float, quote_amount: float) -> None:
+    def _buy(self, price: float, quote_amount: float, closed: list[Candle]) -> None:
         if quote_amount < 10:  # Binance minimum emir buyuklugu civari
             self._log(f"pozisyon cok kucuk ({quote_amount:.2f}), islem yok", self.equity(price))
             return
@@ -100,6 +102,11 @@ class Trader:
             self.state["qty"] += qty
         self.state["entry_price"] = price
         self.state["peak_price"] = price
+        self.state["stop_price"] = 0.0
+        if self.risk.atr_stop_mult > 0:
+            a = atr([c.high for c in closed], [c.low for c in closed], [c.close for c in closed])
+            if a[-1] is not None:
+                self.state["stop_price"] = price - self.risk.atr_stop_mult * a[-1]
         self._log(f"ALIM {quote_amount:.2f} karsiligi @ {price}", self.equity(price), notify=True)
 
     def _sell_all(self, price: float, reason: str) -> None:
@@ -111,14 +118,33 @@ class Trader:
         else:
             self.ex.market_sell_qty(self.cfg.symbol, qty)
         self.state["qty"] = 0.0
-        pnl = 100.0 * (price / self.state["entry_price"] - 1) if self.state["entry_price"] else 0.0
+        entry = self.state["entry_price"]
+        pnl = 100.0 * (price / entry - 1) if entry else 0.0
         self.state["entry_price"] = 0.0
         self.state["peak_price"] = 0.0
+        self.state["stop_price"] = 0.0
+        self._append_trade_csv(entry, price, pnl, reason)
         self._log(f"SATIS ({reason}) @ {price}, islem k/z: {pnl:+.2f}%", self.equity(price), notify=True)
+
+    def _append_trade_csv(self, entry: float, exit_: float, pnl: float, reason: str) -> None:
+        """Kapanan her islemi CSV'ye ekler: Excel/Sheets'te analiz icin."""
+        path = os.path.join(_BASE_DIR, f"trades_{self.cfg.symbol}.csv")
+        new_file = not os.path.exists(path)
+        with open(path, "a", encoding="utf-8") as f:
+            if new_file:
+                f.write("zaman,mod,sembol,giris,cikis,kz_yuzde,neden\n")
+            f.write(
+                f"{time.strftime('%Y-%m-%d %H:%M:%S')},{self.cfg.mode},{self.cfg.symbol},"
+                f"{entry},{exit_},{pnl:.4f},{reason}\n"
+            )
 
     # -- tek tur -----------------------------------------------------------
     def step(self) -> None:
         candles = self.ex.klines(self.cfg.symbol, self.cfg.interval, 250)
+        # Son mum hala olusuyor: sinyal SADECE kapanmis mumlardan uretilir,
+        # yoksa mum ici salinimlar ac-kapa yaptirir (backtestteki look-ahead
+        # yasaginin canli karsiligi). Guncel fiyat ise emir/stop icin kullanilir.
+        closed = candles[:-1]
         price = candles[-1].close
         equity = self.equity(price)
         today = time.strftime("%Y-%m-%d")
@@ -147,16 +173,22 @@ class Trader:
         if in_position:
             peak = max(self.state.get("peak_price", 0.0), self.state["entry_price"], price)
             self.state["peak_price"] = peak
-            reason = exit_reason(self.state["entry_price"], price, self.risk)
+            stop_price = self.state.get("stop_price", 0.0)
+            if stop_price > 0:  # ATR stop aciksa sabit yuzdeli stop yerine gecer
+                reason = "atr_stop" if price <= stop_price else None
+                if not reason and price >= self.state["entry_price"] * (1 + self.risk.take_profit_pct / 100):
+                    reason = "take_profit"
+            else:
+                reason = exit_reason(self.state["entry_price"], price, self.risk)
             if not reason and trailing_exit(peak, price, self.risk):
                 reason = "trailing_stop"
             if reason:
                 self._sell_all(price, reason)
                 return
 
-        target = self.strategy.target_positions(candles)[-1]
+        target = self.strategy.target_positions(closed)[-1]
         if target == 1 and not in_position:
-            self._buy(price, position_size_quote(equity, self.risk))
+            self._buy(price, position_size_quote(equity, self.risk), closed)
         elif target == 0 and in_position:
             self._sell_all(price, "strateji sinyali")
         else:

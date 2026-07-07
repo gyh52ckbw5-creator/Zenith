@@ -33,7 +33,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from bot import backtest, data, scanner  # noqa: E402
 from bot.exchange import BinanceSpot  # noqa: E402
 from bot.risk import RiskConfig  # noqa: E402
-from bot.strategies import STRATEGIES  # noqa: E402
+from bot.strategies import STRATEGIES, TrendFilter  # noqa: E402
 from bot.notify import discover_chat_ids, send_telegram, telegram_configured  # noqa: E402
 from bot.trader import Trader, TraderConfig, run_many  # noqa: E402
 
@@ -66,11 +66,15 @@ UYARI = (
 
 def build_strategy(args: argparse.Namespace):
     cls = STRATEGIES[args.strategy]
-    if args.strategy == "sma":
-        return cls(fast=args.fast, slow=args.slow)
-    if args.strategy == "rsi":
-        return cls(period=args.rsi_period)
-    return cls()
+    if args.strategy in ("sma", "ema"):
+        strat = cls(fast=args.fast, slow=args.slow)
+    elif args.strategy == "rsi":
+        strat = cls(period=args.rsi_period)
+    else:
+        strat = cls()
+    if getattr(args, "trend_filter", 0) > 0:
+        strat = TrendFilter(strat, period=args.trend_filter)
+    return strat
 
 
 def get_candles(args: argparse.Namespace) -> list[data.Candle]:
@@ -123,7 +127,8 @@ def cmd_paper(args: argparse.Namespace) -> None:
             time.sleep(interval_sec)
             continue
 
-        target = strategy.target_positions(candles)[-1]
+        # son mum hala olusuyor: sinyal kapanmis mumlardan, fiyat guncelden
+        target = strategy.target_positions(candles[:-1])[-1]
         price = candles[-1].close
         have_position = state["units"] > 0
         now = time.strftime("%Y-%m-%d %H:%M:%S")
@@ -185,6 +190,7 @@ def cmd_trade(args: argparse.Namespace) -> None:
         take_profit_pct=args.take_profit,
         max_daily_loss_pct=args.max_daily_loss,
         trailing_stop_pct=args.trailing_stop,
+        atr_stop_mult=args.atr_stop,
     )
     api_key = os.environ.get("BINANCE_API_KEY", "")
     api_secret = os.environ.get("BINANCE_API_SECRET", "")
@@ -338,8 +344,10 @@ def main() -> None:
 
     def common(sp: argparse.ArgumentParser) -> None:
         sp.add_argument("--strategy", choices=sorted(STRATEGIES), default="sma")
-        sp.add_argument("--fast", type=int, default=20, help="SMA hizli periyot")
-        sp.add_argument("--slow", type=int, default=50, help="SMA yavas periyot")
+        sp.add_argument("--fast", type=int, default=20, help="SMA/EMA hizli periyot")
+        sp.add_argument("--slow", type=int, default=50, help="SMA/EMA yavas periyot")
+        sp.add_argument("--trend-filter", type=int, default=0,
+                        help="Trend filtresi SMA periyodu, ör. 200 (0 = kapali)")
         sp.add_argument("--rsi-period", type=int, default=14)
         sp.add_argument("--equity", type=float, default=10_000.0, help="Baslangic sanal bakiye")
         sp.add_argument("--symbol", default="BTCUSDT")
@@ -373,6 +381,8 @@ def main() -> None:
     tr.add_argument("--max-daily-loss", type=float, default=5.0, help="Gunluk %% zarar freni")
     tr.add_argument("--trailing-stop", type=float, default=0.0,
                     help="Iz suren stop %% (tepe fiyattan geri cekilme; 0 = kapali)")
+    tr.add_argument("--atr-stop", type=float, default=0.0,
+                    help="ATR stop katsayisi, ör. 2.0 (0 = kapali; aciksa sabit stop yerine gecer)")
     tr.add_argument("--riski-anladim", action="store_true",
                     help="live mod onayi: gercek para kaybedebilecegimi anladim")
 

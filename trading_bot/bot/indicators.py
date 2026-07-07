@@ -51,6 +51,35 @@ def rsi(values: list[float], period: int = 14) -> list[float | None]:
     return out
 
 
+def atr(
+    highs: list[float], lows: list[float], closes: list[float], period: int = 14
+) -> list[float | None]:
+    """Ortalama gercek aralik (ATR, Wilder): piyasanin oynaklik olcusu.
+
+    Profesyonel kullanim: stop mesafesini sabit yuzde yerine ATR'nin
+    kati olarak koymak - oynak piyasada genis, sakin piyasada dar stop.
+    """
+    n = len(closes)
+    out: list[float | None] = [None] * n
+    if n <= period:
+        return out
+    trs = [highs[0] - lows[0]]
+    for i in range(1, n):
+        trs.append(
+            max(
+                highs[i] - lows[i],
+                abs(highs[i] - closes[i - 1]),
+                abs(lows[i] - closes[i - 1]),
+            )
+        )
+    prev = sum(trs[1 : period + 1]) / period
+    out[period] = prev
+    for i in range(period + 1, n):
+        prev = (prev * (period - 1) + trs[i]) / period
+        out[i] = prev
+    return out
+
+
 def _rsi_value(avg_gain: float, avg_loss: float) -> float:
     if avg_loss == 0:
         return 100.0

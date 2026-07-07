@@ -151,3 +151,49 @@ def test_profit_factor():
         ],
     )
     assert abs(res.profit_factor - 2.0) < 1e-9
+
+
+def test_atr_positive_after_warmup():
+    from bot.indicators import atr
+
+    candles = data.synthetic(n=200, seed=10)
+    values = atr(
+        [c.high for c in candles], [c.low for c in candles], [c.close for c in candles], 14
+    )
+    assert values[13] is None  # isinma donemi
+    computed = [v for v in values if v is not None]
+    assert computed and all(v > 0 for v in computed)
+
+
+def test_trend_filter_blocks_below_trend():
+    from bot.strategies import BuyHold, TrendFilter
+
+    candles = data.synthetic(n=400, seed=11)
+    closes = [c.close for c in candles]
+    from bot.indicators import sma
+
+    trend = sma(closes, 200)
+    positions = TrendFilter(BuyHold(), 200).target_positions(candles)
+    for i, p in enumerate(positions):
+        if trend[i] is None or closes[i] <= trend[i]:
+            assert p == 0  # trend altinda alim yasak
+        else:
+            assert p == 1
+
+
+def test_trade_csv_written(tmp_path, monkeypatch):
+    from bot import trader as trader_mod
+    from bot.exchange import BinanceSpot
+    from bot.strategies import BuyHold
+    from bot.trader import Trader, TraderConfig
+
+    monkeypatch.setattr(trader_mod, "_BASE_DIR", str(tmp_path))
+    t = Trader(BuyHold(), TraderConfig(symbol="TESTUSDT", mode="paper", start_equity=1000.0),
+               BinanceSpot(testnet=False))
+    t.state.update({"cash": 0.0, "qty": 1.0, "entry_price": 100.0})
+    t._sell_all(110.0, "test")
+    csv_path = tmp_path / "trades_TESTUSDT.csv"
+    assert csv_path.exists()
+    lines = csv_path.read_text().strip().splitlines()
+    assert lines[0].startswith("zaman,")
+    assert ",100.0,110.0,10.0000,test" in lines[1]

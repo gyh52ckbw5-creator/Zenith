@@ -123,6 +123,25 @@ class BuyHold(Strategy):
         return [1] * len(candles)
 
 
+class TrendFilter(Strategy):
+    """Baska bir stratejiyi sarmalar: fiyat uzun donem SMA'nin (varsayilan
+    200) ustundeyken al sinyallerine izin verir, altindayken hepsini iptal
+    eder. Dusus trendinde 'dusen bicagi tutma' islemlerini eler."""
+
+    def __init__(self, base: Strategy, period: int = 200):
+        self.base, self.period = base, period
+        self.name = f"{base.name}+trend({period})"
+
+    def target_positions(self, candles: list[Candle]) -> list[int]:
+        base_pos = self.base.target_positions(candles)
+        closes = [c.close for c in candles]
+        trend = sma(closes, self.period)
+        return [
+            p if trend[i] is not None and closes[i] > trend[i] else 0
+            for i, p in enumerate(base_pos)
+        ]
+
+
 STRATEGIES = {
     "sma": SmaCross,
     "ema": EmaCross,

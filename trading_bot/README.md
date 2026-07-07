@@ -204,12 +204,45 @@ kendin keşfedeceksin:
 - [x] Portföy raporu (`report`)
 - [x] MT5 Expert Advisor (MQL5) + kurulum rehberi
 
-**Sırada (öncelik sırasıyla):**
-- [ ] ATR tabanlı dinamik stop (oynaklığa göre genişleyen/daralan stop mesafesi)
-- [ ] Trend filtresi (SMA200 üstündeyken al sinyallerini kabul et — yanlış kırılımı azaltır)
-- [ ] İşlem günlüğü CSV çıktısı + equity eğrisi grafiği
-- [ ] Sunucuda 7/24 çalıştırma rehberi (systemd servisi)
+- [x] ATR tabanlı dinamik stop (`--atr-stop 2.0`: stop mesafesi oynaklığa uyum sağlar)
+- [x] Trend filtresi (`--trend-filter 200`: fiyat SMA200 altındayken alım yasak)
+- [x] İşlem günlüğü CSV çıktısı (`trades_SEMBOL.csv`, kapanan her işlem)
+- [x] Canlı sinyalde kapanmamış mum düzeltmesi (sinyal yalnızca kapanan mumdan üretilir)
+- [x] Sunucuda 7/24 çalıştırma rehberi (aşağıda)
+
+**Sırada:**
+- [ ] Equity eğrisi grafiği (HTML rapor)
+- [ ] Emir miktarında borsa hassasiyet kuralları (LOT_SIZE/stepSize otomatik yuvarlama)
 - [ ] Binance testnet'te 1-2 aylık gerçek zamanlı doğrulama koşusu ← **asıl kilometre taşı**
+
+## 6b. Sunucuda 7/24 çalıştırma (systemd)
+
+Ev bilgisayarı kapanınca bot durur. Ayda ~5$'a bir Linux sunucuda
+(Hetzner/DigitalOcean) kesintisiz çalıştırmak için `/etc/systemd/system/zenith-bot.service`:
+
+```ini
+[Unit]
+Description=Zenith trading bot (paper)
+After=network-online.target
+
+[Service]
+WorkingDirectory=/home/kullanici/Zenith/trading_bot
+ExecStart=/usr/bin/python3 run.py trade --mode paper --symbols BTCUSDT,ETHUSDT --strategy sma
+Restart=always
+RestartSec=30
+
+[Install]
+WantedBy=multi-user.target
+```
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable --now zenith-bot   # baslat + acilista otomatik
+journalctl -u zenith-bot -f              # canli log izle
+```
+
+Bot çökse/sunucu yeniden başlasa bile `Restart=always` + durum dosyaları
+sayesinde kaldığı yerden devam eder; işlemler Telegram'dan cebine düşer.
 
 ## 7. Yasal uyarı
 
