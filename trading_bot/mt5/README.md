@@ -36,10 +36,16 @@ ve lot büyüklüğünü "işlem başına bakiyenin %1'i riskte" kuralıyla hesa
 | Parametre | Varsayılan | Anlamı |
 |---|---|---|
 | FastPeriod / SlowPeriod | 20 / 50 | SMA periyotları |
+| UseTrendFilter / TrendPeriod | true / 200 | Fiyat SMA200 altındayken alım yasak |
 | RiskPercent | 1.0 | İşlem başına riske edilen bakiye yüzdesi |
 | StopLossPoints | 2000 | Stop-loss mesafesi (puan; EURUSD'de 2000 puan = 200 pip) |
 | TakeProfitPoints | 4000 | Kâr al mesafesi (2:1 ödül/risk) |
-| MagicNumber | 20260706 | EA'nın kendi işlemlerini tanıma imzası |
+| TrailingStopPoints | 0 | İz süren stop (0 = kapalı); SL'i sadece lehine taşır |
+| MaxDailyLossPercent | 5.0 | Günlük zarar freni: aşılırsa o gün işlem yok |
+| CooldownBars | 3 | Pozisyon kapandıktan sonra N mum yeni giriş yok |
+| MagicNumber | 20260708 | EA'nın kendi işlemlerini tanıma imzası |
+
+Forex'e özel notlar ve Türkiye'deki yasal çerçeve için: [../FOREX.md](../FOREX.md)
 
 ## Uyarılar
 

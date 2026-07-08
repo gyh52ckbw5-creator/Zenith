@@ -1,34 +1,47 @@
 //+------------------------------------------------------------------+
-//| ZenithSmaEA.mq5                                                  |
-//| SMA kesisim stratejisi - egitim amacli Expert Advisor            |
+//| ZenithSmaEA.mq5  v2                                              |
+//| SMA kesisim stratejisi + tam risk zinciri - egitim amacli EA     |
 //|                                                                  |
-//| trading_bot/bot/strategies.py icindeki SmaCross'un MQL5 hali.    |
-//| SADECE DEMO HESAPTA kullanin. Once MetaEditor'de derleyin (F7),  |
-//| sonra Strateji Sinayici'da (Ctrl+R) yillarca veride test edin.   |
+//| Python botundaki (trading_bot/) risk yonetiminin MQL5 karsiligi: |
+//|  - SMA kesisiminde long, ters kesisimde kapat (short yok)        |
+//|  - Istege bagli SMA200 trend filtresi (dusen bicak koruması)     |
+//|  - Sabit SL/TP + istege bagli iz suren stop (trailing)           |
+//|  - Gunluk zarar freni: gun ici kayip limiti asilirsa gun kapanir |
+//|  - Cooldown: pozisyon kapandiktan sonra N mum yeni giris yok     |
+//|  - Lot, "islem basina % risk" kuralindan hesaplanir              |
 //|                                                                  |
-//| Kurallar:                                                        |
-//|  - Hizli SMA yavas SMA'yi yukari keserse: AL (long)              |
-//|  - Asagi keserse: pozisyonu KAPAT (short acilmaz)                |
-//|  - Her pozisyona otomatik stop-loss ve take-profit konur         |
-//|  - Lot, hesap bakiyesinin RiskPercent'i riske girecek boyutta    |
+//| SADECE DEMO HESAPTA kullanin. MetaEditor'de F7 ile derleyin,     |
+//| Strateji Sinayici'da (Ctrl+R) yillarca veride test edin.         |
 //+------------------------------------------------------------------+
 #property copyright "Zenith contributors"
-#property version   "1.00"
+#property version   "2.00"
 #property strict
 
 #include <Trade\Trade.mqh>
 
 CTrade trade;
 
-input int    FastPeriod       = 20;       // Hizli SMA periyodu
-input int    SlowPeriod       = 50;       // Yavas SMA periyodu
-input double RiskPercent      = 1.0;      // Islem basina risk (% bakiye)
-input int    StopLossPoints   = 2000;     // Stop-loss (puan)
-input int    TakeProfitPoints = 4000;     // Take-profit (puan)
-input ulong  MagicNumber      = 20260706; // Bu EA'nin islem imzasi
+input int    FastPeriod          = 20;       // Hizli SMA periyodu
+input int    SlowPeriod          = 50;       // Yavas SMA periyodu
+input bool   UseTrendFilter      = true;     // SMA trend filtresi acik mi?
+input int    TrendPeriod         = 200;      // Trend filtresi periyodu
+input double RiskPercent         = 1.0;      // Islem basina risk (% bakiye)
+input int    StopLossPoints      = 2000;     // Stop-loss (puan)
+input int    TakeProfitPoints    = 4000;     // Take-profit (puan)
+input int    TrailingStopPoints  = 0;        // Iz suren stop (puan, 0 = kapali)
+input double MaxDailyLossPercent = 5.0;      // Gunluk zarar freni (%, 0 = kapali)
+input int    CooldownBars        = 3;        // Kapanis sonrasi bekleme (mum)
+input ulong  MagicNumber         = 20260708; // Bu EA'nin islem imzasi
 
 int fastHandle = INVALID_HANDLE;
 int slowHandle = INVALID_HANDLE;
+int trendHandle = INVALID_HANDLE;
+
+datetime g_lastCloseTime = 0;   // cooldown icin son kapanis zamani
+datetime g_dayStart = 0;        // gunluk fren: gunun baslangici
+double   g_dayStartEquity = 0;  // gunluk fren: gun basi bakiye
+bool     g_haltedToday = false; // fren cekildiyse bugun islem yok
+bool     g_hadPosition = false; // kapanis tespiti icin onceki tur durumu
 
 //+------------------------------------------------------------------+
 int OnInit()
@@ -42,6 +55,12 @@ int OnInit()
    slowHandle = iMA(_Symbol, _Period, SlowPeriod, 0, MODE_SMA, PRICE_CLOSE);
    if(fastHandle == INVALID_HANDLE || slowHandle == INVALID_HANDLE)
       return(INIT_FAILED);
+   if(UseTrendFilter)
+     {
+      trendHandle = iMA(_Symbol, _Period, TrendPeriod, 0, MODE_SMA, PRICE_CLOSE);
+      if(trendHandle == INVALID_HANDLE)
+         return(INIT_FAILED);
+     }
    trade.SetExpertMagicNumber(MagicNumber);
    return(INIT_SUCCEEDED);
   }
@@ -49,12 +68,11 @@ int OnInit()
 //+------------------------------------------------------------------+
 void OnDeinit(const int reason)
   {
-   if(fastHandle != INVALID_HANDLE) IndicatorRelease(fastHandle);
-   if(slowHandle != INVALID_HANDLE) IndicatorRelease(slowHandle);
+   if(fastHandle != INVALID_HANDLE)  IndicatorRelease(fastHandle);
+   if(slowHandle != INVALID_HANDLE)  IndicatorRelease(slowHandle);
+   if(trendHandle != INVALID_HANDLE) IndicatorRelease(trendHandle);
   }
 
-//+------------------------------------------------------------------+
-//| Yeni mum acildi mi? Sinyal sadece kapanan mumdan uretilir.       |
 //+------------------------------------------------------------------+
 bool IsNewBar()
   {
@@ -67,9 +85,9 @@ bool IsNewBar()
   }
 
 //+------------------------------------------------------------------+
-//| Bu EA'ya (MagicNumber) ait acik pozisyon var mi?                 |
+//| Bu EA'ya ait acik pozisyonun ticket'i (yoksa 0).                 |
 //+------------------------------------------------------------------+
-bool HasPosition()
+ulong MyPositionTicket()
   {
    for(int i = PositionsTotal() - 1; i >= 0; i--)
      {
@@ -77,26 +95,22 @@ bool HasPosition()
       if(ticket > 0 && PositionSelectByTicket(ticket)
          && PositionGetString(POSITION_SYMBOL) == _Symbol
          && PositionGetInteger(POSITION_MAGIC) == (long)MagicNumber)
-         return(true);
+         return(ticket);
      }
-   return(false);
+   return(0);
   }
 
 //+------------------------------------------------------------------+
-void CloseAllPositions()
+void CloseAllPositions(const string reason)
   {
-   for(int i = PositionsTotal() - 1; i >= 0; i--)
+   ulong ticket = MyPositionTicket();
+   if(ticket > 0)
      {
-      ulong ticket = PositionGetTicket(i);
-      if(ticket > 0 && PositionSelectByTicket(ticket)
-         && PositionGetString(POSITION_SYMBOL) == _Symbol
-         && PositionGetInteger(POSITION_MAGIC) == (long)MagicNumber)
-         trade.PositionClose(ticket);
+      trade.PositionClose(ticket);
+      Print("Pozisyon kapatildi: ", reason);
      }
   }
 
-//+------------------------------------------------------------------+
-//| Stop mesafesine gore riski RiskPercent'e sabitleyen lot hesabi.  |
 //+------------------------------------------------------------------+
 double LotsByRisk()
   {
@@ -109,22 +123,77 @@ double LotsByRisk()
    double lossPerLot = StopLossPoints * _Point / tickSize * tickValue;
    if(lossPerLot <= 0)
       return(0.0);
-   double lots    = riskMoney / lossPerLot;
-   double step    = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_STEP);
-   double minLot  = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MIN);
-   double maxLot  = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MAX);
+   double lots   = riskMoney / lossPerLot;
+   double step   = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_STEP);
+   double minLot = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MIN);
+   double maxLot = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MAX);
    if(step > 0)
       lots = MathFloor(lots / step) * step;
    return(MathMin(MathMax(lots, minLot), maxLot));
   }
 
 //+------------------------------------------------------------------+
+//| Gunluk zarar freni: gun degisimini izler, limit asilirsa durur.  |
+//+------------------------------------------------------------------+
+bool DailyHaltActive()
+  {
+   datetime today = iTime(_Symbol, PERIOD_D1, 0);
+   if(today != g_dayStart)
+     {
+      g_dayStart = today;
+      g_dayStartEquity = AccountInfoDouble(ACCOUNT_EQUITY);
+      g_haltedToday = false;
+     }
+   if(g_haltedToday)
+      return(true);
+   if(MaxDailyLossPercent <= 0 || g_dayStartEquity <= 0)
+      return(false);
+   double equity = AccountInfoDouble(ACCOUNT_EQUITY);
+   if(equity <= g_dayStartEquity * (1 - MaxDailyLossPercent / 100.0))
+     {
+      CloseAllPositions("gunluk zarar freni");
+      g_haltedToday = true;
+      Print("KILL SWITCH: gunluk zarar > %", MaxDailyLossPercent, ", bugun islem yok");
+      return(true);
+     }
+   return(false);
+  }
+
+//+------------------------------------------------------------------+
+//| Iz suren stop: SL'i sadece YUKARI tasir (long pozisyon).         |
+//+------------------------------------------------------------------+
+void ApplyTrailing()
+  {
+   if(TrailingStopPoints <= 0)
+      return;
+   ulong ticket = MyPositionTicket();
+   if(ticket == 0 || !PositionSelectByTicket(ticket))
+      return;
+   double bid = SymbolInfoDouble(_Symbol, SYMBOL_BID);
+   double newSL = NormalizeDouble(bid - TrailingStopPoints * _Point, _Digits);
+   double curSL = PositionGetDouble(POSITION_SL);
+   double curTP = PositionGetDouble(POSITION_TP);
+   if(newSL > curSL + _Point)  // sadece iyilesme yonunde guncelle
+      trade.PositionModify(ticket, newSL, curTP);
+  }
+
+//+------------------------------------------------------------------+
 void OnTick()
   {
+   if(DailyHaltActive())
+      return;
+
+   ApplyTrailing();  // trailing her tikte calisir, sinyaller yeni mumda
+
+   // kapanis tespiti (SL/TP/manuel dahil): cooldown sayaci baslat
+   bool nowHasPosition = (MyPositionTicket() != 0);
+   if(g_hadPosition && !nowHasPosition)
+      g_lastCloseTime = TimeCurrent();
+   g_hadPosition = nowHasPosition;
+
    if(!IsNewBar())
       return;
 
-   // Kapanmis son iki mumun SMA degerleri (index 0 = son kapanan mum)
    double fast[], slow[];
    ArraySetAsSeries(fast, true);
    ArraySetAsSeries(slow, true);
@@ -135,16 +204,36 @@ void OnTick()
 
    bool crossUp   = fast[0] > slow[0] && fast[1] <= slow[1];
    bool crossDown = fast[0] < slow[0] && fast[1] >= slow[1];
-   bool inPosition = HasPosition();
 
-   if(crossDown && inPosition)
+   if(crossDown && nowHasPosition)
      {
-      CloseAllPositions();
+      CloseAllPositions("strateji sinyali");
       return;
      }
 
-   if(crossUp && !inPosition)
+   if(crossUp && !nowHasPosition)
      {
+      // cooldown: son kapanistan bu yana yeterli mum gecti mi?
+      if(CooldownBars > 0 && g_lastCloseTime > 0
+         && TimeCurrent() - g_lastCloseTime < (long)CooldownBars * PeriodSeconds(_Period))
+        {
+         Print("cooldown: yeni giris icin bekleniyor");
+         return;
+        }
+      // trend filtresi: fiyat uzun donem ortalamanin ustunde olmali
+      if(UseTrendFilter)
+        {
+         double trendBuf[];
+         ArraySetAsSeries(trendBuf, true);
+         if(CopyBuffer(trendHandle, 0, 1, 1, trendBuf) < 1)
+            return;
+         double lastClose = iClose(_Symbol, _Period, 1);
+         if(lastClose <= trendBuf[0])
+           {
+            Print("trend filtresi: fiyat SMA", TrendPeriod, " altinda, giris yok");
+            return;
+           }
+        }
       double lots = LotsByRisk();
       if(lots <= 0)
         {
@@ -154,7 +243,7 @@ void OnTick()
       double ask = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
       double sl  = NormalizeDouble(ask - StopLossPoints * _Point, _Digits);
       double tp  = NormalizeDouble(ask + TakeProfitPoints * _Point, _Digits);
-      if(!trade.Buy(lots, _Symbol, 0.0, sl, tp, "ZenithSmaEA"))
+      if(!trade.Buy(lots, _Symbol, 0.0, sl, tp, "ZenithSmaEA v2"))
          Print("Alim emri basarisiz: ", trade.ResultRetcodeDescription());
      }
   }

@@ -450,3 +450,12 @@ def test_yahoo_4h_falls_back_to_1h():
         assert "interval=1h" in captured["url"]
     finally:
         urllib.request.urlopen = orig
+
+
+def test_symbol_presets_expand():
+    import run
+
+    assert run.parse_symbols("FOREX") == ["EURUSD", "GBPUSD", "USDJPY", "USDTRY", "XAUUSD"]
+    assert run.parse_symbols("kripto") == ["BTCUSDT", "ETHUSDT", "SOLUSDT"]
+    assert run.parse_symbols("BTCUSDT, eurusd") == ["BTCUSDT", "EURUSD"]  # normal liste bozulmaz
+    assert "XAUUSD" in run.parse_symbols("FOREX,DOGEUSDT")  # kisayol + ek sembol karisabilir

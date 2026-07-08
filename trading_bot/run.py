@@ -94,6 +94,24 @@ def get_candles(args: argparse.Namespace) -> list[data.Candle]:
     return data.fetch_binance(args.symbol, args.interval, args.bars)
 
 
+SYMBOL_PRESETS = {
+    "FOREX": "EURUSD,GBPUSD,USDJPY,USDTRY,XAUUSD",
+    "KRIPTO": "BTCUSDT,ETHUSDT,SOLUSDT",
+    "HEPSI": "BTCUSDT,ETHUSDT,EURUSD,GBPUSD,XAUUSD",
+}
+
+
+def parse_symbols(text: str) -> list[str]:
+    """Virgullu listeyi ayristirir; FOREX/KRIPTO/HEPSI kisayollarini acar."""
+    out: list[str] = []
+    for part in text.split(","):
+        s = part.strip().upper()
+        if not s:
+            continue
+        out.extend(SYMBOL_PRESETS.get(s, s).split(","))
+    return out
+
+
 def smart_fetch(interval: str, bars: int):
     """Sembole gore dogru kaynagi secen veri cekici: USDT ile bitenler
     Binance'ten (kripto), digerleri Yahoo'dan (forex/altin/hisse)."""
@@ -188,7 +206,7 @@ def cmd_paper(args: argparse.Namespace) -> None:
 def cmd_scan(args: argparse.Namespace) -> None:
     """Otomatik arastirma: kombinasyonlari tarar, dogrulama verisine gore siralar."""
     print(UYARI)
-    symbols = [s.strip().upper() for s in args.symbols.split(",") if s.strip()]
+    symbols = parse_symbols(args.symbols)
     if args.source == "synthetic":
         def fetch(symbol: str) -> list[data.Candle]:
             return data.synthetic(n=args.bars, seed=abs(hash(symbol)) % 10_000)
@@ -250,7 +268,7 @@ def cmd_trade(args: argparse.Namespace) -> None:
     else:
         ex = BinanceSpot(testnet=False)  # sadece halka acik veri okunur
 
-    symbols = [s.strip().upper() for s in (args.symbols or args.symbol).split(",") if s.strip()]
+    symbols = parse_symbols(args.symbols or args.symbol)
     if telegram_configured():
         print("Telegram bildirimi AKTIF: islemler telefonuna gidecek.\n")
     else:
@@ -392,7 +410,7 @@ def cmd_analyze(args: argparse.Namespace) -> None:
     """Surekli analiz modu: bot bosta dururken bile duzenli araliklarla
     tum piyasalari tarar, en iyi adaylari raporlar, Telegram'a gonderir."""
     print(UYARI)
-    symbols = [s.strip().upper() for s in args.symbols.split(",") if s.strip()]
+    symbols = parse_symbols(args.symbols)
     fetch = smart_fetch(args.interval, args.bars)
     print(f"Surekli analiz: {', '.join(symbols)} ({args.interval}), "
           f"her {args.every_hours} saatte bir tur")
