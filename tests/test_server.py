@@ -99,3 +99,42 @@ def test_reset_endpoint_clears_memory(monkeypatch, tmp_path):
     res = TestClient(server.app).post("/api/reset")
     assert res.status_code == 200
     assert server._assistant.memory.messages == []
+
+
+def test_trading_status_endpoint(tmp_path, monkeypatch):
+    import json as _json
+
+    state = {
+        "cash": 750.0, "qty": 0.004, "entry_price": 64000.0,
+        "equity_history": [[1000, 1000.0], [2000, 1010.5]],
+        "halted_day": "",
+    }
+    (tmp_path / "trader_state_BTCUSDT.json").write_text(_json.dumps(state))
+    (tmp_path / "trader_state_BOZUK.json").write_text("{yarim json")  # atlanmali
+    monkeypatch.setattr(server, "TRADING_DIR", tmp_path)
+
+    client = TestClient(server.app)
+    res = client.get("/api/trading/status")
+    assert res.status_code == 200
+    data = res.json()
+    assert data["total_equity"] == 1010.5
+    assert len(data["symbols"]) == 1
+    assert data["symbols"][0]["symbol"] == "BTCUSDT"
+
+
+def test_trading_page_renders_chart(tmp_path, monkeypatch):
+    import json as _json
+
+    state = {"cash": 0.0, "qty": 1.0, "entry_price": 100.0,
+             "equity_history": [[1000, 100.0], [2000, 105.0], [3000, 110.0]]}
+    (tmp_path / "trader_state_ETHUSDT.json").write_text(_json.dumps(state))
+    # sayfa render_live_html'i gercek trading_bot paketinden yukler;
+    # state dosyalarini ise gecici dizinden okur
+    monkeypatch.setattr(server, "TRADING_DIR", tmp_path, raising=True)
+    import sys as _sys
+    _sys.path.insert(0, str(server.STATIC_DIR.parent / "trading_bot"))
+
+    client = TestClient(server.app)
+    res = client.get("/trading")
+    assert res.status_code == 200
+    assert "<svg" in res.text and "ETHUSDT" in res.text

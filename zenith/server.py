@@ -14,13 +14,14 @@ from pathlib import Path
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
 from pydantic import BaseModel
 
 from .assistant import ZenithAssistant
 from .router import NoAvailableModelError
 
 STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
+TRADING_DIR = Path(__file__).resolve().parent.parent / "trading_bot"
 
 app = FastAPI(title="Zenith")
 app.add_middleware(
@@ -186,6 +187,54 @@ async def reset() -> dict:
     async with _lock:
         _assistant.memory.reset()
     return {"ok": True}
+
+
+def _trading_states() -> dict[str, dict]:
+    """trading_bot/trader_state_*.json dosyalarini okur (bot kuruluysa)."""
+    states: dict[str, dict] = {}
+    for path in sorted(TRADING_DIR.glob("trader_state_*.json")):
+        symbol = path.stem.replace("trader_state_", "")
+        try:
+            states[symbol] = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue  # bozuk/yarim dosya sayfayi dusurmesin
+    return states
+
+
+@app.get("/api/trading/status")
+async def trading_status() -> dict:
+    """Trading botun sembol basina son durumu (son kayitli degerlerden, ag yok)."""
+    symbols = []
+    total = 0.0
+    for symbol, st in _trading_states().items():
+        history = st.get("equity_history", [])
+        last_equity = history[-1][1] if history else st.get("cash", 0.0)
+        total += last_equity
+        symbols.append(
+            {
+                "symbol": symbol,
+                "cash": st.get("cash", 0.0),
+                "qty": st.get("qty", 0.0),
+                "entry_price": st.get("entry_price", 0.0),
+                "last_equity": last_equity,
+                "last_update_ms": history[-1][0] if history else None,
+                "halted_day": st.get("halted_day", ""),
+            }
+        )
+    return {"symbols": symbols, "total_equity": total}
+
+
+@app.get("/trading")
+async def trading_page() -> HTMLResponse:
+    """Portfoy tarihcesi grafigi - telefondan da acilir (PWA icinden /trading)."""
+    import sys
+
+    if str(TRADING_DIR) not in sys.path:
+        sys.path.insert(0, str(TRADING_DIR))
+    from bot.report_html import render_live_html  # tembel: bot kurulu degilse sayfa aninda hata versin
+
+    histories = {s: st.get("equity_history", []) for s, st in _trading_states().items()}
+    return HTMLResponse(render_live_html(histories, "Zenith portfoy tarihcesi"))
 
 
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
