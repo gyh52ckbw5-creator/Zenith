@@ -421,3 +421,32 @@ def test_optimize_sorted_by_median():
     medians = [r.median_pct for r in results]
     assert medians == sorted(medians, reverse=True)
     assert all(len(r.segments) == 4 for r in results)
+
+
+def test_yahoo_4h_falls_back_to_1h():
+    # 4h Yahoo'da yok; ValueError yerine 1h'e dusmeli (URL kurulana kadar
+    # hata firlatmamasi yeterli - ag cagrisina gelmeden interval dogrulanir)
+    import urllib.request
+
+    captured = {}
+
+    class _Fake:
+        def __enter__(self):
+            captured["ok"] = True
+            raise RuntimeError("ag-yok")
+
+        def __exit__(self, *a):
+            return False
+
+    orig = urllib.request.urlopen
+    try:
+        def fake_urlopen(req, timeout=0):
+            captured["url"] = req.full_url
+            raise RuntimeError("ag-yok")
+
+        urllib.request.urlopen = fake_urlopen
+        with pytest.raises(RuntimeError, match="ag-yok"):
+            data.fetch_yahoo("EURUSD=X", "4h", 10)
+        assert "interval=1h" in captured["url"]
+    finally:
+        urllib.request.urlopen = orig

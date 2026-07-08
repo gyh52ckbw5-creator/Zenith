@@ -1,9 +1,25 @@
 # Trading Bot — Gerçekler ve Eğitim Amaçlı Başlangıç Kiti
 
-> **ÖNEMLİ:** Bu klasördeki kod **gerçek para ile işlem açmaz**. Amacı, sosyal
-> medyada gördüğün "otomatik al-sat botu" işinin **gerçekte nasıl çalıştığını**
-> kendi gözünle görmen: strateji yazmak, geçmiş veride test etmek (backtest) ve
-> sanal para ile canlı takip (paper trading).
+> **Kuruluma başlamak için: [KURULUM.md](KURULUM.md)** — telefondan sunucuya,
+> sıralı ve tik atmalı plan. Sunucuda tek komut kurulum: `./kur.sh`
+
+> **ÖNEMLİ:** Varsayılan modlar **gerçek para ile işlem açmaz** (live modu
+> bilinçli olarak iki kilit ister). Amaç, sosyal medyada gördüğün "otomatik
+> al-sat botu" işinin **gerçekte nasıl çalıştığını** kendi gözünle görmen.
+
+## Komutlara hızlı bakış
+
+| Komut | Ne yapar |
+|---|---|
+| `backtest` | Stratejiyi geçmiş veride test eder (komisyon/kayma + isteğe bağlı stop simülasyonu) |
+| `chart` | Backtest + equity eğrisi grafikli HTML rapor |
+| `scan` | 13 strateji kombinasyonunu tarar, overfit'i işaretler |
+| `walkforward` | Ardışık dönem doğrulaması (profesyonel standart) |
+| `optimize` | Parametre arama, walk-forward puanlamalı |
+| `analyze` | Sürekli analiz + Telegram raporu (bot boştayken bile) |
+| `trade` | Otomatik işlem: paper → testnet → live, tam risk yönetimli |
+| `report` | Portföy durumu (`--html` ile grafik) |
+| `notify-test` | Telegram kurulumu ve testi |
 
 ## 1. TikTok / Instagram'da gördüklerin hakkında acı gerçek
 

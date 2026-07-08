@@ -241,3 +241,15 @@ edilir.
 - Yanıtları kelime kelime akıtan (streaming/SSE) sohbet arayüzü
 - Uzun süreli hafıza (kullanıcı hakkında kalıcı bilgi/tercihler)
 - Push notification (örn. hatırlatıcılar) için Web Push desteği
+
+## Trading Bot (eğitim amaçlı)
+
+Depoda ayrıca bağımsız bir algoritmik alım-satım eğitim kiti var:
+[`trading_bot/`](trading_bot/README.md) — dürüst backtest motoru,
+walk-forward doğrulama, risk yönetimi, paper/testnet/live işlem döngüsü,
+Telegram bildirimleri ve sürekli piyasa analizi. Kurulum sırası:
+[`trading_bot/KURULUM.md`](trading_bot/KURULUM.md).
+
+Zenith asistanı içinden de kullanılabilir: `fiyat BTCUSDT`,
+`piyasa tara: BTCUSDT,XAUUSD` ve web arayüzünde `/trading` portföy sayfası.
+Bu araçlar yatırım tavsiyesi değildir; geçmiş performans geleceği garanti etmez.

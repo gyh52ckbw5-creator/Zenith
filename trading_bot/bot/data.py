@@ -106,6 +106,7 @@ def fetch_yahoo(symbol: str, interval: str = "1d", limit: int = 500) -> list[Can
     Forex (EURUSD=X), altin (GC=F), hisse, endeks - MT5'te gordugun USD
     paritelerinin verisi. Sadece VERI OKUR, islem yapamaz.
     """
+    interval = {"4h": "1h"}.get(interval, interval)  # Yahoo 4h bilmez; 1h'e dusulur
     if interval not in _YAHOO_RANGE:
         raise ValueError(
             f"Yahoo {interval} desteklemiyor; secenekler: {', '.join(_YAHOO_RANGE)}"

@@ -1,23 +1,29 @@
 #!/usr/bin/env python3
 """Egitim amacli trading bot - komut satiri arayuzu.
 
+Komutlar (ayrintili kurulum sirasi icin: KURULUM.md):
+  backtest     Stratejiyi gecmis veride test et (--stop-loss vb. ile risk simulasyonu)
+  chart        Backtest + equity egrisi grafikli HTML rapor
+  scan         Sembol x strateji x parametre tarama, overfit isaretlemeli
+  walkforward  Stratejiyi ardisik zaman dilimlerinde dogrula (profesyonel standart)
+  optimize     Rastgele parametre arama, walk-forward puanlamali (hyperopt-lite)
+  analyze      Surekli analiz: duzenli tarar, Telegram'a rapor atar
+  trade        Otomatik islem dongusu: paper / testnet / live (risk yonetimli)
+  report       Sanal portfoy durumu (--html ile grafik)
+  notify-test  Telegram baglantisini kur ve test et
+
 Ornekler:
-  # Sentetik veriyle backtest (internet gerekmez):
-  python run.py backtest --strategy sma --source synthetic
+  python run.py backtest --strategy sma --source synthetic          # internet gerekmez
+  python run.py backtest --strategy sma --source yahoo --symbol XAUUSD --interval 1d
+  python run.py scan --symbols BTCUSDT,ETHUSDT,XAUUSD --interval 1d
+  python run.py optimize --strategy donchian --source binance --symbol BTCUSDT
+  python run.py analyze --once
+  python run.py trade --mode paper --symbols BTCUSDT,ETHUSDT --strategy sma
+  python run.py trade --mode live  --symbol BTCUSDT --riski-anladim  # GERCEK PARA
 
-  # Gercek Binance verisiyle backtest (sadece veri okur, hesap gerekmez):
-  python run.py backtest --strategy rsi --source binance --symbol BTCUSDT --interval 4h
-
-  # OTOMATIK ARASTIRMA: sembol x strateji x parametre tarar, overfit'i isaretler:
-  python run.py scan --symbols BTCUSDT,ETHUSDT --interval 4h
-
-  # OTOMATIK ISLEM (risk yonetimli). Once paper, sonra testnet, en son live:
-  python run.py trade --mode paper   --strategy sma --symbol BTCUSDT
-  python run.py trade --mode testnet --strategy sma --symbol BTCUSDT
-  python run.py trade --mode live    --strategy sma --symbol BTCUSDT --riski-anladim
-
-testnet/live icin BINANCE_API_KEY ve BINANCE_API_SECRET ortam degiskenleri gerekir.
-paper ve testnet modlarinda GERCEK PARA YOKTUR. live mod GERCEK PARADIR.
+Sembol kurali: USDT ile bitenler Binance'ten (kripto), digerleri Yahoo'dan
+(EURUSD, XAUUSD/GOLD, USDTRY, hisse...). testnet/live icin BINANCE_API_KEY ve
+BINANCE_API_SECRET gerekir (trading_bot/.env). live mod GERCEK PARADIR.
 """
 
 from __future__ import annotations
@@ -130,6 +136,8 @@ def cmd_backtest(args: argparse.Namespace) -> None:
 
 def cmd_paper(args: argparse.Namespace) -> None:
     """Sanal cuzdanla canli sinyal takibi. Ctrl+C ile durdurulur."""
+    print("Not: `paper` eski/basit moddur (risk yonetimi yok). Onerilen:")
+    print("  python run.py trade --mode paper --symbol", args.symbol, "\n")
     strategy = build_strategy(args)
     state = {"cash": args.equity, "units": 0.0, "log": []}
     if os.path.exists(STATE_FILE):
