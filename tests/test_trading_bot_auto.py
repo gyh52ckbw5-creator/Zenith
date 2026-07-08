@@ -197,3 +197,45 @@ def test_trade_csv_written(tmp_path, monkeypatch):
     lines = csv_path.read_text().strip().splitlines()
     assert lines[0].startswith("zaman,")
     assert ",100.0,110.0,10.0000,test" in lines[1]
+
+
+def test_yahoo_symbol_mapping():
+    assert data.yahoo_symbol("EURUSD") == "EURUSD=X"
+    assert data.yahoo_symbol("usdtry") == "USDTRY=X"
+    assert data.yahoo_symbol("XAUUSD") == "GC=F"
+    assert data.yahoo_symbol("BTCUSDT") == "BTCUSDT"  # kripto dokunulmaz
+    assert data.yahoo_symbol("GC=F") == "GC=F"
+
+
+def test_parse_yahoo_skips_null_bars():
+    payload = {
+        "chart": {
+            "result": [
+                {
+                    "timestamp": [100, 200, 300],
+                    "indicators": {
+                        "quote": [
+                            {
+                                "open": [1.0, None, 1.2],
+                                "high": [1.1, 1.1, 1.3],
+                                "low": [0.9, 0.9, 1.1],
+                                "close": [1.05, 1.0, 1.25],
+                                "volume": [10, 20, None],
+                            }
+                        ]
+                    },
+                }
+            ]
+        }
+    }
+    candles = data.parse_yahoo(payload)
+    assert len(candles) == 2  # null'lu bar atlandi
+    assert candles[0].ts == 100_000 and candles[1].volume == 0
+
+
+def test_ai_comment_silent_without_key(monkeypatch):
+    from bot.ai_analyst import ai_available, ai_comment
+
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+    assert ai_available() is False
+    assert ai_comment("ozet") is None

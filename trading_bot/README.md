@@ -210,10 +210,48 @@ kendin keşfedeceksin:
 - [x] Canlı sinyalde kapanmamış mum düzeltmesi (sinyal yalnızca kapanan mumdan üretilir)
 - [x] Sunucuda 7/24 çalıştırma rehberi (aşağıda)
 
+- [x] Forex/altın veri kaynağı (Yahoo Finance: EURUSD, XAUUSD, USDTRY... anahtar gerekmez)
+- [x] Sürekli analiz modu (`analyze`): bot boştayken bile düzenli tarar, Telegram'a rapor atar
+- [x] Ücretsiz AI yorumcu (isteğe bağlı, OpenRouter)
+
 **Sırada:**
 - [ ] Equity eğrisi grafiği (HTML rapor)
 - [ ] Emir miktarında borsa hassasiyet kuralları (LOT_SIZE/stepSize otomatik yuvarlama)
 - [ ] Binance testnet'te 1-2 aylık gerçek zamanlı doğrulama koşusu ← **asıl kilometre taşı**
+
+### Forex / altın verisi (MT5 pariteleri)
+
+`USDT` ile biten semboller Binance'ten (kripto), diğerleri Yahoo Finance'ten
+(forex/altın) otomatik çekilir — MT5'te gördüğün USD paritelerinin verisi:
+
+```bash
+python run.py backtest --strategy sma --source yahoo --symbol EURUSD --interval 1d
+python run.py walkforward --strategy donchian --source yahoo --symbol XAUUSD --interval 1d
+```
+
+Kısayollar: `XAUUSD`/`GOLD`/`ALTIN` → altın, `XAGUSD` → gümüş,
+6 harfli pariteler (`EURUSD`, `USDTRY`...) otomatik tanınır.
+Not: Yahoo verisiyle sadece analiz yapılır; forex'te gerçek işlem MT5 +
+SPK yetkili kurum gerektirir (`mt5/` klasörüne bak).
+
+### Sürekli analiz modu (bot boştayken bile çalışır)
+
+```bash
+python run.py analyze --symbols BTCUSDT,ETHUSDT,EURUSD,XAUUSD --interval 1d --every-hours 6
+```
+
+Her turda tüm sembol × strateji kombinasyonlarını tarar (eğitim/doğrulama
+ayrımı + overfit tespitiyle), en iyi 3'ü ve elemeyi geçen adayı hem ekrana
+yazar hem Telegram'dan cebine gönderir. `--once` ile tek tur çalışır.
+systemd ile ikinci bir servis olarak 7/24 koşturulabilir.
+
+### Ücretsiz AI yorumcu (isteğe bağlı)
+
+[openrouter.ai](https://openrouter.ai)'dan ücretsiz anahtar alıp `.env`'e
+`OPENROUTER_API_KEY=...` yazarsan, `analyze` raporlarına ücretsiz bir
+yapay zekâ modelinin (varsayılan: DeepSeek) temkinli risk-yöneticisi
+yorumu eklenir ve Telegram mesajına dahil edilir. AI yorumu da tahmindir;
+karar mercii her zaman risk kurallarıdır.
 
 ## 6b. Sunucuda 7/24 çalıştırma (systemd)
 

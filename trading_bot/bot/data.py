@@ -5,6 +5,7 @@ from __future__ import annotations
 import csv
 import json
 import random
+import urllib.parse
 import urllib.request
 from dataclasses import dataclass
 
@@ -75,6 +76,64 @@ def synthetic(n: int = 1000, seed: int = 42, start_price: float = 100.0) -> list
             )
         )
         price = close
+    return candles
+
+
+_YAHOO_RANGE = {"1m": "5d", "5m": "1mo", "15m": "1mo", "30m": "3mo", "1h": "730d", "1d": "10y"}
+
+
+def yahoo_symbol(symbol: str) -> str:
+    """Kullanici dostu sembolu Yahoo formatina cevirir.
+
+    EURUSD -> EURUSD=X (forex), XAUUSD/GOLD/ALTIN -> GC=F (altin vadeli),
+    zaten Yahoo formatinda olanlar aynen gecer.
+    """
+    s = symbol.upper()
+    if s in ("XAUUSD", "GOLD", "ALTIN"):
+        return "GC=F"
+    if s in ("XAGUSD", "SILVER", "GUMUS"):
+        return "SI=F"
+    if "=" in s or "." in s or "-" in s or "^" in s:
+        return s
+    if len(s) == 6 and s.isalpha() and not s.endswith("USDT"):
+        return s + "=X"  # EURUSD, USDTRY, GBPUSD gibi forex pariteleri
+    return s
+
+
+def fetch_yahoo(symbol: str, interval: str = "1d", limit: int = 500) -> list[Candle]:
+    """Yahoo Finance grafik API'sinden OHLC ceker (anahtar gerekmez).
+
+    Forex (EURUSD=X), altin (GC=F), hisse, endeks - MT5'te gordugun USD
+    paritelerinin verisi. Sadece VERI OKUR, islem yapamaz.
+    """
+    if interval not in _YAHOO_RANGE:
+        raise ValueError(
+            f"Yahoo {interval} desteklemiyor; secenekler: {', '.join(_YAHOO_RANGE)}"
+        )
+    url = (
+        "https://query1.finance.yahoo.com/v8/finance/chart/"
+        f"{urllib.parse.quote(symbol)}?interval={interval}&range={_YAHOO_RANGE[interval]}"
+    )
+    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+    with urllib.request.urlopen(req, timeout=15) as resp:
+        payload = json.loads(resp.read().decode())
+    return parse_yahoo(payload)[-limit:]
+
+
+def parse_yahoo(payload: dict) -> list[Candle]:
+    result = (payload.get("chart", {}).get("result") or [None])[0]
+    if not result:
+        err = payload.get("chart", {}).get("error")
+        raise ValueError(f"Yahoo veri dondurmedi: {err}")
+    timestamps = result.get("timestamp") or []
+    quote = result["indicators"]["quote"][0]
+    candles: list[Candle] = []
+    for i, ts in enumerate(timestamps):
+        o, h, l, c = quote["open"][i], quote["high"][i], quote["low"][i], quote["close"][i]
+        if None in (o, h, l, c):  # Yahoo tatil/bos barlarda null doner
+            continue
+        vol = quote.get("volume", [0] * len(timestamps))[i] or 0
+        candles.append(Candle(ts=int(ts) * 1000, open=o, high=h, low=l, close=c, volume=vol))
     return candles
 
 

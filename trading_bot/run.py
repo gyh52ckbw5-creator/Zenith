@@ -31,6 +31,7 @@ import time
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from bot import backtest, data, scanner  # noqa: E402
+from bot.ai_analyst import ai_available, ai_comment  # noqa: E402
 from bot.exchange import BinanceSpot  # noqa: E402
 from bot.risk import RiskConfig  # noqa: E402
 from bot.strategies import STRATEGIES, TrendFilter  # noqa: E402
@@ -82,7 +83,22 @@ def get_candles(args: argparse.Namespace) -> list[data.Candle]:
         return data.synthetic(n=args.bars, seed=args.seed)
     if args.source == "csv":
         return data.load_csv(args.csv)
+    if args.source == "yahoo":
+        return data.fetch_yahoo(data.yahoo_symbol(args.symbol), args.interval, args.bars)
     return data.fetch_binance(args.symbol, args.interval, args.bars)
+
+
+def smart_fetch(interval: str, bars: int):
+    """Sembole gore dogru kaynagi secen veri cekici: USDT ile bitenler
+    Binance'ten (kripto), digerleri Yahoo'dan (forex/altin/hisse)."""
+    ex = BinanceSpot(testnet=False)
+
+    def fetch(symbol: str) -> list[data.Candle]:
+        if symbol.upper().endswith("USDT"):
+            return ex.klines(symbol, interval, bars)
+        return data.fetch_yahoo(data.yahoo_symbol(symbol), interval, bars)
+
+    return fetch
 
 
 def cmd_backtest(args: argparse.Namespace) -> None:
@@ -159,10 +175,8 @@ def cmd_scan(args: argparse.Namespace) -> None:
     if args.source == "synthetic":
         def fetch(symbol: str) -> list[data.Candle]:
             return data.synthetic(n=args.bars, seed=abs(hash(symbol)) % 10_000)
-    else:
-        ex = BinanceSpot(testnet=False)
-        def fetch(symbol: str) -> list[data.Candle]:
-            return ex.klines(symbol, args.interval, args.bars)
+    else:  # USDT ile bitenler Binance'ten, digerleri (EURUSD, XAUUSD...) Yahoo'dan
+        fetch = smart_fetch(args.interval, args.bars)
 
     print(f"Taraniyor: {', '.join(symbols)} ({args.source}, {args.interval}, {args.bars} mum)")
     print("Veri %70 egitim / %30 dogrulama olarak bolundu.\n")
@@ -300,6 +314,45 @@ def cmd_report(args: argparse.Namespace) -> None:
     print(f"\nToplam portfoy degeri: {total:.2f}")
 
 
+def cmd_analyze(args: argparse.Namespace) -> None:
+    """Surekli analiz modu: bot bosta dururken bile duzenli araliklarla
+    tum piyasalari tarar, en iyi adaylari raporlar, Telegram'a gonderir."""
+    print(UYARI)
+    symbols = [s.strip().upper() for s in args.symbols.split(",") if s.strip()]
+    fetch = smart_fetch(args.interval, args.bars)
+    print(f"Surekli analiz: {', '.join(symbols)} ({args.interval}), "
+          f"her {args.every_hours} saatte bir tur")
+    print(f"Telegram: {'aktif' if telegram_configured() else 'kapali'}, "
+          f"AI yorumcu: {'aktif' if ai_available() else 'kapali (OPENROUTER_API_KEY yok)'}\n")
+    while True:
+        stamp = time.strftime("%Y-%m-%d %H:%M")
+        lines = [f"Zenith analiz turu - {stamp} ({args.interval})"]
+        try:
+            results = scanner.scan(symbols, fetch)
+            lines.append("En iyi 3 kombinasyon (dogrulama verisinde):")
+            for r in results[:3]:
+                lines.append("  " + r.row())
+            pick = scanner.best_pick(results)
+            if pick:
+                lines.append(f"Elemeyi gecen aday: {pick.symbol} + {pick.strategy} "
+                             f"(dogrulama {pick.test_return_pct:+.2f}%)")
+            else:
+                lines.append("Elemeyi gecen aday YOK - dogru hamle beklemek.")
+        except Exception as e:  # noqa: BLE001 - tur atlansin ama dongu olmesin
+            lines.append(f"Analiz hatasi: {e}")
+        summary = "\n".join(lines)
+        print(summary)
+        comment = ai_comment(summary)
+        if comment:
+            print(f"\nAI yorumu: {comment}")
+            summary += f"\n\nAI yorumu: {comment}"
+        send_telegram(summary[:4000])
+        if args.once:
+            return
+        print(f"\nSonraki tur: {args.every_hours} saat sonra. (Ctrl+C ile durdur)\n")
+        time.sleep(args.every_hours * 3600)
+
+
 def cmd_notify_test(args: argparse.Namespace) -> None:
     """Telegram baglantisini kurar/dogrular: chat ID bulur, test mesaji atar."""
     token = os.environ.get("TELEGRAM_BOT_TOKEN", "")
@@ -356,7 +409,7 @@ def main() -> None:
 
     bt = sub.add_parser("backtest", help="Stratejiyi gecmis veride test et")
     common(bt)
-    bt.add_argument("--source", choices=["synthetic", "csv", "binance"], default="synthetic")
+    bt.add_argument("--source", choices=["synthetic", "csv", "binance", "yahoo"], default="synthetic")
     bt.add_argument("--csv", help="CSV dosya yolu (--source csv icin)")
     bt.add_argument("--seed", type=int, default=42)
     bt.add_argument("--commission", type=float, default=0.1, help="Islem basina %% komisyon")
@@ -388,10 +441,18 @@ def main() -> None:
 
     wf = sub.add_parser("walkforward", help="Stratejiyi ardisik zaman dilimlerinde dogrula")
     common(wf)
-    wf.add_argument("--source", choices=["synthetic", "csv", "binance"], default="binance")
+    wf.add_argument("--source", choices=["synthetic", "csv", "binance", "yahoo"], default="binance")
     wf.add_argument("--csv", help="CSV dosya yolu (--source csv icin)")
     wf.add_argument("--seed", type=int, default=42)
     wf.add_argument("--segments", type=int, default=5, help="Dilim sayisi")
+
+    an = sub.add_parser("analyze", help="Surekli analiz: bosta bile tarar, Telegram'a rapor atar")
+    an.add_argument("--symbols", default="BTCUSDT,ETHUSDT,EURUSD,XAUUSD",
+                    help="Karisik liste: USDT ile bitenler Binance, digerleri Yahoo (forex/altin)")
+    an.add_argument("--interval", default="1d", help="Mum periyodu (yahoo: 1h veya 1d onerilir)")
+    an.add_argument("--bars", type=int, default=1000)
+    an.add_argument("--every-hours", type=float, default=6.0, help="Tur araligi (saat)")
+    an.add_argument("--once", action="store_true", help="Tek tur calis ve cik")
 
     sub.add_parser("report", help="Sanal portfoy durum raporu")
     sub.add_parser("notify-test", help="Telegram baglantisini kur ve test mesaji at")
@@ -405,6 +466,8 @@ def main() -> None:
         cmd_trade(args)
     elif args.cmd == "walkforward":
         cmd_walkforward(args)
+    elif args.cmd == "analyze":
+        cmd_analyze(args)
     elif args.cmd == "report":
         cmd_report(args)
     elif args.cmd == "notify-test":
