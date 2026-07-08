@@ -24,9 +24,13 @@
   <aside id="sidebar" hidden>
     <div class="sidebar-head">
       <span>Sohbetler</span>
-      <button id="new-chat-btn" title="Yeni sohbet">+ Yeni</button>
+      <div class="sidebar-head-actions">
+        <button id="new-chat-btn" title="Yeni sohbet">+ Yeni</button>
+        <button id="sidebar-close" title="Kapat" aria-label="Kapat">&times;</button>
+      </div>
     </div>
     <div id="conversation-list"></div>
+    <a id="sidebar-trading" href="/trading">&#128200; Portfoy grafigi</a>
   </aside>
 
   <div id="app">
@@ -52,6 +56,7 @@
         <select id="model-select" title="Model sec">
           <option value="">Oto model</option>
         </select>
+        <a id="trading-btn" href="/trading" title="Portfoy grafigi">&#128200;</a>
         <button id="export-btn" title="Sohbeti indir">&#8681;</button>
       </div>
     </header>
@@ -69,6 +74,9 @@
           <button class="chip" data-fill="sifre: 20">Sifre uret</button>
           <button class="chip" data-fill="not: ">Not al</button>
           <button class="chip" data-fill="ara: bugun teknoloji haberleri">Web&apos;de ara</button>
+          <button class="chip" data-fill="fiyat XAUUSD">Altin fiyati</button>
+          <button class="chip" data-fill="piyasa tara: HEPSI">Piyasa taramasi</button>
+          <button class="chip" data-send="__trading__">Strateji analizi (ajan)</button>
           <button class="chip" data-send="__council__">Konseye bir soru sor</button>
         </div>
       </div>

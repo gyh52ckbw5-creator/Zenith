@@ -3,7 +3,7 @@
 // yeni bir deploy telefonda aninda gorunur. Ag yoksa cache'e duser (cevrimdisi).
 // Sohbet API'si (/api/*) hic cache'lenmez.
 
-const CACHE_NAME = "zenith-static-v8";
+const CACHE_NAME = "zenith-static-v9";
 const STATIC_ASSETS = ["/", "/static/style.css", "/static/app.js", "/manifest.json"];
 
 self.addEventListener("install", (event) => {

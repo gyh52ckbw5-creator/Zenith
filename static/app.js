@@ -450,6 +450,9 @@ document.addEventListener("click", (e) => {
   if (chip.dataset.send === "__council__") {
     councilToggle.checked = true;
     input.value = "Kuantum bilgisayarlari basit bir dille anlatir misin?";
+  } else if (chip.dataset.send === "__trading__") {
+    agentToggle.checked = true; // strateji analizi ajan araclarini kullanir
+    input.value = "XAUUSD icin sma stratejisini walkforward ile degerlendir";
   } else {
     input.value = chip.dataset.fill || "";
   }
@@ -469,6 +472,10 @@ function closeSidebar() {
 }
 menuBtn.addEventListener("click", openSidebar);
 sidebarOverlay.addEventListener("click", closeSidebar);
+document.getElementById("sidebar-close").addEventListener("click", closeSidebar);
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && !sidebar.hidden) closeSidebar();
+});
 newChatBtn.addEventListener("click", () => {
   const conv = { id: newId(), title: "Yeni sohbet", messages: [], updated: Date.now() };
   store.conversations.unshift(conv);

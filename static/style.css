@@ -401,6 +401,13 @@ button:active {
   z-index: 20;
 }
 
+/* Kritik: #sidebar'daki display:flex, UA'nin [hidden] kuralini ezer ve
+   cekmece bir daha kapanmaz. hidden her zaman kazanmali. */
+#sidebar[hidden],
+#sidebar-overlay[hidden] {
+  display: none !important;
+}
+
 #sidebar {
   position: fixed;
   top: 0;
@@ -436,6 +443,42 @@ button:active {
   border: none;
   color: white;
   font-weight: 600;
+}
+
+.sidebar-head-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+#sidebar-close {
+  background: transparent;
+  border: none;
+  color: var(--text);
+  font-size: 22px;
+  padding: 0 8px;
+  line-height: 1;
+}
+
+#sidebar-trading {
+  display: block;
+  margin: auto 12px 12px;
+  padding: 12px;
+  text-align: center;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  color: var(--text);
+  text-decoration: none;
+  font-weight: 600;
+}
+
+#trading-btn {
+  padding: 0 10px;
+  border-radius: 10px;
+  background: transparent;
+  border: none;
+  font-size: 18px;
+  text-decoration: none;
 }
 
 #conversation-list {
