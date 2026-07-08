@@ -398,3 +398,26 @@ def test_render_live_html():
     html = render_live_html(histories, "Portfoy")
     assert "<svg" in html and html.count("polyline") == 2
     assert "BTCUSDT" in html and "+4.00%" in html  # ETH degisimi
+
+
+def test_sample_strategy_always_valid():
+    import random
+
+    from bot.optimize import sample_strategy
+
+    rng = random.Random(0)
+    for kind in ("sma", "ema", "rsi", "donchian", "bollinger", "macd"):
+        for _ in range(50):
+            strat = sample_strategy(kind, rng)  # gecersiz parametre ValueError firlatirdi
+            assert strat.name
+
+
+def test_optimize_sorted_by_median():
+    from bot.optimize import optimize
+
+    candles = data.synthetic(n=1000, seed=16)
+    results = optimize(candles, "sma", trials=8, segments=4, seed=1)
+    assert results
+    medians = [r.median_pct for r in results]
+    assert medians == sorted(medians, reverse=True)
+    assert all(len(r.segments) == 4 for r in results)

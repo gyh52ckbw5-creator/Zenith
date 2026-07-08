@@ -30,7 +30,7 @@ import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from bot import backtest, data, scanner  # noqa: E402
+from bot import backtest, data, optimize as optimize_mod, scanner  # noqa: E402
 from bot.ai_analyst import ai_available, ai_comment  # noqa: E402
 from bot.exchange import BinanceSpot  # noqa: E402
 from bot.risk import RiskConfig  # noqa: E402
@@ -360,6 +360,26 @@ def cmd_chart(args: argparse.Namespace) -> None:
     print("Tarayicida ac: mavi cizgi strateji, gri cizgi al-ve-tut kiyasi.")
 
 
+def cmd_optimize(args: argparse.Namespace) -> None:
+    """Rastgele parametre arama, walk-forward puanlamali (hyperopt-lite)."""
+    if args.strategy == "hold":
+        sys.exit("hold stratejisinin parametresi yok; sma/ema/rsi/donchian/bollinger/macd sec.")
+    print(UYARI)
+    candles = get_candles(args)
+    results = optimize_mod.optimize(
+        candles, args.strategy,
+        trials=args.trials, segments=args.segments, seed=args.seed,
+        stop_loss_pct=args.stop_loss, take_profit_pct=args.take_profit,
+        trailing_stop_pct=args.trailing_stop, cooldown_bars=args.cooldown,
+    )
+    print(f"{args.strategy} icin {len(results)} kombinasyon denendi "
+          f"({args.source}, {len(candles)} mum, {args.segments} dilim). En iyi 10:\n")
+    for r in results[:10]:
+        print("  " + r.row())
+    print("\nPuan = dilim getirilerinin MEDYANI (tek donemin sansli kahramani elenir).")
+    print("Yine de bu secim GECMISE gore yapildi - canli oncesi taze veride dogrula.")
+
+
 def cmd_analyze(args: argparse.Namespace) -> None:
     """Surekli analiz modu: bot bosta dururken bile duzenli araliklarla
     tum piyasalari tarar, en iyi adaylari raporlar, Telegram'a gonderir."""
@@ -515,6 +535,15 @@ def main() -> None:
     ch.add_argument("--out", help="Cikti dosyasi (varsayilan: report_SEMBOL_strateji.html)")
     risk_sim_flags(ch)
 
+    op = sub.add_parser("optimize", help="Parametre optimizasyonu (walk-forward puanlamali)")
+    common(op)
+    op.add_argument("--source", choices=["synthetic", "csv", "binance", "yahoo"], default="binance")
+    op.add_argument("--csv", help="CSV dosya yolu (--source csv icin)")
+    op.add_argument("--seed", type=int, default=42)
+    op.add_argument("--trials", type=int, default=30, help="Denenecek kombinasyon sayisi")
+    op.add_argument("--segments", type=int, default=5, help="Walk-forward dilim sayisi")
+    risk_sim_flags(op)
+
     an = sub.add_parser("analyze", help="Surekli analiz: bosta bile tarar, Telegram'a rapor atar")
     an.add_argument("--symbols", default="BTCUSDT,ETHUSDT,EURUSD,XAUUSD",
                     help="Karisik liste: USDT ile bitenler Binance, digerleri Yahoo (forex/altin)")
@@ -540,6 +569,8 @@ def main() -> None:
         cmd_analyze(args)
     elif args.cmd == "chart":
         cmd_chart(args)
+    elif args.cmd == "optimize":
+        cmd_optimize(args)
     elif args.cmd == "report":
         cmd_report(args)
     elif args.cmd == "notify-test":
