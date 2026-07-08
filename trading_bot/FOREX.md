@@ -71,6 +71,40 @@ Sıra şöyle:
 4. Gerçek paraya geçiş ancak SPK yetkili kurumda ve KURULUM.md Faz 5
    kriterleriyle olur.
 
+## 3b. iPhone'dan forex (Windows bilgisayarın yoksa)
+
+Gerçek durum: **MT5'in iOS uygulaması EA (robot) çalıştıramaz** — EA'lar
+yalnızca masaüstü terminalde koşar. iPhone'la bu iş üç parçayla kurulur:
+
+**Adım 1 — Bugün, bedava: MT5 iOS uygulaması (öğrenme + izleme)**
+1. App Store → **MetaTrader 5** (MetaQuotes) → indir.
+2. Ayarlar → Yeni Hesap → **MetaQuotes-Demo** → demo hesap aç (ücretsiz,
+   şartsız, süresiz).
+3. EURUSD ve XAUUSD grafiklerini incele; birkaç **manuel demo işlem** yap:
+   emir, lot, SL/TP koymayı elinle öğren. Botun ne yaptığını anlamanın
+   en hızlı yolu, bir kez elle yapmaktır.
+
+**Adım 2 — Analiz: zaten iPhone'da çalışıyor**
+Codespaces/Termius'tan `scan --symbols FOREX`, `walkforward`, `optimize` —
+hepsi bu depoda hazır (bkz. bölüm 3).
+
+**Adım 3 — EA'yı 7/24 çalıştırmak: Windows VPS + iPhone'dan uzak masaüstü**
+1. Windows VPS kirala (~10-15$/ay: Contabo, Kamatera vb. "Windows VPS").
+2. App Store → **Windows App** (Microsoft'un resmî RDP istemcisi, bedava)
+   → VPS'in IP'si + kullanıcı adı/şifresiyle bağlan. Artık iPhone'unda
+   tam bir Windows masaüstü var.
+3. O Windows'ta: MT5 kur → demo hesap → MetaEditor'de `ZenithSmaEA.mq5`'i
+   derle (F7) → grafiğe ekle → Algo Trading'i aç. VPS hep açık kaldığı
+   için EA 7/24 çalışır.
+4. **İzleme hilesi:** MT5 iOS uygulamasına AYNI demo hesabıyla gir —
+   EA'nın VPS'te açtığı pozisyonlar telefonunda canlı görünür. Yani
+   robotu kurarken RDP, izlerken doğal iOS uygulaması.
+
+Bütçe dostu sıra: önce Adım 1+2 (bedava) ile haftalarca öğren; EA'nın
+Strateji Sınayıcı testlerini de RDP'siz halledemezsin, o yüzden Windows
+VPS'i ancak cebin elverdiğinde ve Python taraftaki paper koşun otururken
+ekle. Acele eden forex'e değil, spread'e yem olur.
+
 ## 4. Forex'e özel tuzaklar
 
 - **Haber anları:** NFP (ABD tarım dışı istihdam), faiz kararları... Spread
