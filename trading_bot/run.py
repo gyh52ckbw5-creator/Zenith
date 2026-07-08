@@ -314,6 +314,32 @@ def cmd_report(args: argparse.Namespace) -> None:
     print(f"\nToplam portfoy degeri: {total:.2f}")
 
 
+def cmd_chart(args: argparse.Namespace) -> None:
+    """Backtest calistirir ve equity egrisi grafikli HTML rapor uretir."""
+    from bot.report_html import render_html
+
+    candles = get_candles(args)
+    strategy = build_strategy(args)
+    result = backtest.run_backtest(
+        candles, strategy,
+        start_equity=args.equity,
+        commission_pct=args.commission,
+        slippage_pct=args.slippage,
+    )
+    title = f"{args.symbol if args.source in ('binance', 'yahoo') else args.source} " \
+            f"{args.interval} - {result.strategy}"
+    out = args.out or os.path.join(
+        os.path.dirname(os.path.abspath(__file__)),
+        f"report_{args.symbol}_{args.strategy}.html",
+    )
+    with open(out, "w", encoding="utf-8") as f:
+        f.write(render_html(result, candles, title))
+    print(UYARI)
+    print(result.summary())
+    print(f"\nHTML rapor yazildi: {out}")
+    print("Tarayicida ac: mavi cizgi strateji, gri cizgi al-ve-tut kiyasi.")
+
+
 def cmd_analyze(args: argparse.Namespace) -> None:
     """Surekli analiz modu: bot bosta dururken bile duzenli araliklarla
     tum piyasalari tarar, en iyi adaylari raporlar, Telegram'a gonderir."""
@@ -446,6 +472,15 @@ def main() -> None:
     wf.add_argument("--seed", type=int, default=42)
     wf.add_argument("--segments", type=int, default=5, help="Dilim sayisi")
 
+    ch = sub.add_parser("chart", help="Backtest + equity egrisi grafikli HTML rapor")
+    common(ch)
+    ch.add_argument("--source", choices=["synthetic", "csv", "binance", "yahoo"], default="binance")
+    ch.add_argument("--csv", help="CSV dosya yolu (--source csv icin)")
+    ch.add_argument("--seed", type=int, default=42)
+    ch.add_argument("--commission", type=float, default=0.1)
+    ch.add_argument("--slippage", type=float, default=0.05)
+    ch.add_argument("--out", help="Cikti dosyasi (varsayilan: report_SEMBOL_strateji.html)")
+
     an = sub.add_parser("analyze", help="Surekli analiz: bosta bile tarar, Telegram'a rapor atar")
     an.add_argument("--symbols", default="BTCUSDT,ETHUSDT,EURUSD,XAUUSD",
                     help="Karisik liste: USDT ile bitenler Binance, digerleri Yahoo (forex/altin)")
@@ -468,6 +503,8 @@ def main() -> None:
         cmd_walkforward(args)
     elif args.cmd == "analyze":
         cmd_analyze(args)
+    elif args.cmd == "chart":
+        cmd_chart(args)
     elif args.cmd == "report":
         cmd_report(args)
     elif args.cmd == "notify-test":

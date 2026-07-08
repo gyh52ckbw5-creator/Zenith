@@ -239,3 +239,33 @@ def test_ai_comment_silent_without_key(monkeypatch):
     monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
     assert ai_available() is False
     assert ai_comment("ozet") is None
+
+
+def test_format_qty_no_scientific_notation():
+    from bot.exchange import format_qty
+
+    assert format_qty(0.00001) == "0.00001"   # 1e-05 degil
+    assert format_qty(1.230000) == "1.23"
+    assert format_qty(5.0) == "5"
+
+
+def test_round_qty_floors_to_step():
+    from bot.exchange import BinanceSpot
+
+    ex = BinanceSpot(testnet=False)
+    ex._filters["XUSDT"] = {"LOT_SIZE": {"stepSize": "0.001", "minQty": "0.01"}}
+    assert abs(ex.round_qty("XUSDT", 1.23456) - 1.234) < 1e-12  # asagi yuvarlar
+    assert ex.round_qty("XUSDT", 0.005) == 0.0                  # minQty alti = 0
+
+
+def test_render_html_contains_svg_and_stats():
+    from bot.backtest import run_backtest
+    from bot.report_html import render_html
+    from bot.strategies import SmaCross
+
+    candles = data.synthetic(n=400, seed=12)
+    result = run_backtest(candles, SmaCross(10, 30))
+    html = render_html(result, candles, "Test Raporu")
+    assert "<svg" in html and "polyline" in html
+    assert "Toplam getiri" in html and "Test Raporu" in html
+    assert "Uyari" in html  # egitim uyarisi her raporda olmali

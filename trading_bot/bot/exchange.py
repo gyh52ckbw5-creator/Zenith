@@ -17,6 +17,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+import math
 import time
 import urllib.error
 import urllib.parse
@@ -38,6 +39,7 @@ class BinanceSpot:
         self.api_secret = api_secret
         self.testnet = testnet
         self._base: str | None = TESTNET_BASE if testnet else None
+        self._filters: dict[str, dict] = {}  # sembol basina emir kurali onbellegi
 
     # -- dusuk seviye ---------------------------------------------------
     def _request(self, method: str, path: str, params: dict | None = None, signed: bool = False) -> dict | list:
@@ -116,14 +118,47 @@ class BinanceSpot:
         )
 
     def market_sell_qty(self, symbol: str, qty: float) -> dict:
-        """qty adet baz varligi piyasa fiyatindan satar."""
+        """qty adet baz varligi piyasa fiyatindan satar.
+
+        Miktar, borsanin LOT_SIZE kuralina (stepSize/minQty) otomatik
+        yuvarlanir; yoksa Binance emri -1013 hatasiyla reddeder.
+        """
+        qty = self.round_qty(symbol, qty)
+        if qty <= 0:
+            raise ExchangeError(f"{symbol}: miktar LOT_SIZE kurallarina gore cok kucuk")
         return self._request(
             "POST", "/api/v3/order",
-            {"symbol": symbol, "side": "SELL", "type": "MARKET", "quantity": f"{qty:.6f}"},
+            {"symbol": symbol, "side": "SELL", "type": "MARKET",
+             "quantity": format_qty(qty)},
             signed=True,
         )
+
+    def lot_rule(self, symbol: str) -> tuple[float, float]:
+        """Sembolun (stepSize, minQty) LOT_SIZE kuralini dondurur (onbellekli)."""
+        if symbol not in self._filters:
+            info = self._request("GET", "/api/v3/exchangeInfo", {"symbol": symbol})
+            filters = {f["filterType"]: f for f in info["symbols"][0]["filters"]}
+            self._filters[symbol] = filters
+        f = self._filters[symbol].get("LOT_SIZE")
+        if not f:
+            return 0.0, 0.0
+        return float(f["stepSize"]), float(f["minQty"])
+
+    def round_qty(self, symbol: str, qty: float) -> float:
+        """Miktari stepSize'in tam katina ASAGI yuvarlar (fazla satmamak icin)."""
+        step, min_qty = self.lot_rule(symbol)
+        if step <= 0:
+            return qty
+        qty = math.floor(qty / step + 1e-9) * step
+        return 0.0 if qty < min_qty else qty
 
 
 def sign(query: str, secret: str) -> str:
     """Binance HMAC-SHA256 imzasi."""
     return hmac.new(secret.encode(), query.encode(), hashlib.sha256).hexdigest()
+
+
+def format_qty(qty: float) -> str:
+    """Miktari bilimsel gosterimsiz, sondaki sifirlar atilmis yazar
+    (Binance '1e-05' gibi degerleri kabul etmez)."""
+    return f"{qty:.8f}".rstrip("0").rstrip(".")

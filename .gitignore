@@ -10,3 +10,4 @@ venv/
 trading_bot/paper_state.json
 trading_bot/trader_state*.json
 trading_bot/trades_*.csv
+trading_bot/report_*.html
