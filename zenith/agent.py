@@ -16,13 +16,26 @@ yazar. Bu, ReAct desenli hafif bir ajandir.
 
 from __future__ import annotations
 
+import asyncio
 import re
 
-from . import skills, websearch
+from . import skills, tools, trading_tools, websearch
 from .config import ZenithConfig
 from .router import ask as router_ask
 
 MAX_STEPS = 4
+
+
+def _threaded(fn):
+    """Senkron (ag/CPU isi yapan) araci ajanin async dongusune uyarlar."""
+
+    async def inner(arg: str) -> str:
+        try:
+            return await asyncio.to_thread(fn, arg)
+        except Exception as exc:  # noqa: BLE001 - arac hatasi ajani oldurmesin
+            return f"arac hatasi: {exc}"
+
+    return inner
 
 
 async def _run_search(query: str) -> str:
@@ -41,6 +54,23 @@ TOOLS = {
     "haber": (skills.news, "Guncel haber basliklari. Arguman: konu (bos olabilir)."),
     "sozluk": (skills.dictionary, "Ingilizce kelime tanimi. Arguman: kelime."),
     "ara": (_run_search, "Web'de arar. Arguman: sorgu."),
+    # Trading araclari (trading_bot koprusu) - egitim amacli, gercek emir yok:
+    "fiyat": (_threaded(tools.price_lookup),
+              "Guncel fiyat. Arguman: sembol (BTCUSDT, EURUSD, XAUUSD...)."),
+    "piyasa": (_threaded(tools.market_scan),
+               "Piyasa taramasi: strateji kombinasyonlarini dener, en iyileri verir. "
+               "Arguman: virgullu semboller veya FOREX/KRIPTO/HEPSI (bos olabilir)."),
+    "backtest": (_threaded(trading_tools.backtest_text),
+                 "Stratejiyi gecmis veride test eder. Arguman: 'SEMBOL strateji periyot' "
+                 "(ör: 'XAUUSD sma 1d'; stratejiler: sma ema rsi donchian bollinger macd)."),
+    "walkforward": (_threaded(trading_tools.walkforward_text),
+                    "Stratejiyi ardisik donemlerde dogrular (guvenilirlik testi). "
+                    "Arguman: 'SEMBOL strateji periyot'."),
+    "optimize": (_threaded(trading_tools.optimize_text),
+                 "Strateji parametrelerini walk-forward puaniyla arar. "
+                 "Arguman: 'SEMBOL strateji periyot'."),
+    "portfoy": (_threaded(trading_tools.portfolio_text),
+                "Calisan trading botunun sanal portfoy durumu. Arguman: bos."),
 }
 
 

@@ -73,9 +73,14 @@ def price_lookup(symbol: str) -> str:
 def market_scan(symbols_text: str, fetch=None) -> str:
     """Trading bot tarayicisiyla hizli piyasa taramasi (egitim amacli)."""
     data, scanner, BinanceSpot = _load_trading_bot()
-    symbols = [s.strip().upper() for s in symbols_text.split(",") if s.strip()] or [
-        "BTCUSDT", "ETHUSDT", "XAUUSD",
-    ]
+    try:  # FOREX/KRIPTO/HEPSI kisayollarini run.py'deki tek kaynaktan ac
+        import run as _tb_run  # noqa: PLC0415 - _load_trading_bot yolu ekledi
+
+        symbols = _tb_run.parse_symbols(symbols_text)
+    except Exception:  # noqa: BLE001
+        symbols = [s.strip().upper() for s in symbols_text.split(",") if s.strip()]
+    if not symbols:
+        symbols = ["BTCUSDT", "ETHUSDT", "XAUUSD"]
     if fetch is None:
         ex = BinanceSpot(testnet=False)
 
