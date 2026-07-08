@@ -101,16 +101,25 @@ def smart_fetch(interval: str, bars: int):
     return fetch
 
 
-def cmd_backtest(args: argparse.Namespace) -> None:
-    candles = get_candles(args)
-    strategy = build_strategy(args)
-    result = backtest.run_backtest(
+def run_bt(args: argparse.Namespace, candles, strategy):
+    """backtest/chart icin ortak kosum: risk bayraklarini da simule eder."""
+    return backtest.run_backtest(
         candles,
         strategy,
         start_equity=args.equity,
         commission_pct=args.commission,
         slippage_pct=args.slippage,
+        stop_loss_pct=args.stop_loss,
+        take_profit_pct=args.take_profit,
+        trailing_stop_pct=args.trailing_stop,
+        cooldown_bars=args.cooldown,
     )
+
+
+def cmd_backtest(args: argparse.Namespace) -> None:
+    candles = get_candles(args)
+    strategy = build_strategy(args)
+    result = run_bt(args, candles, strategy)
     print(UYARI)
     print(f"Veri: {args.source}, {len(candles)} mum\n")
     print(result.summary())
@@ -322,12 +331,7 @@ def cmd_chart(args: argparse.Namespace) -> None:
 
     candles = get_candles(args)
     strategy = build_strategy(args)
-    result = backtest.run_backtest(
-        candles, strategy,
-        start_equity=args.equity,
-        commission_pct=args.commission,
-        slippage_pct=args.slippage,
-    )
+    result = run_bt(args, candles, strategy)
     title = f"{args.symbol if args.source in ('binance', 'yahoo') else args.source} " \
             f"{args.interval} - {result.strategy}"
     out = args.out or os.path.join(
@@ -435,6 +439,13 @@ def main() -> None:
         sp.add_argument("--interval", default="1h")
         sp.add_argument("--bars", type=int, default=1000)
 
+    def risk_sim_flags(sp: argparse.ArgumentParser) -> None:
+        """backtest/chart icin mum ici risk simulasyonu bayraklari (0 = kapali)."""
+        sp.add_argument("--stop-loss", type=float, default=0.0, help="%% stop-loss simulasyonu")
+        sp.add_argument("--take-profit", type=float, default=0.0, help="%% kar-al simulasyonu")
+        sp.add_argument("--trailing-stop", type=float, default=0.0, help="%% iz suren stop")
+        sp.add_argument("--cooldown", type=int, default=0, help="Stop sonrasi mum bekleme")
+
     bt = sub.add_parser("backtest", help="Stratejiyi gecmis veride test et")
     common(bt)
     bt.add_argument("--source", choices=["synthetic", "csv", "binance", "yahoo"], default="synthetic")
@@ -442,6 +453,7 @@ def main() -> None:
     bt.add_argument("--seed", type=int, default=42)
     bt.add_argument("--commission", type=float, default=0.1, help="Islem basina %% komisyon")
     bt.add_argument("--slippage", type=float, default=0.05, help="Islem basina %% kayma")
+    risk_sim_flags(bt)
 
     pt = sub.add_parser("paper", help="Sanal parayla canli sinyal takibi (emir gondermez)")
     common(pt)
@@ -486,6 +498,7 @@ def main() -> None:
     ch.add_argument("--commission", type=float, default=0.1)
     ch.add_argument("--slippage", type=float, default=0.05)
     ch.add_argument("--out", help="Cikti dosyasi (varsayilan: report_SEMBOL_strateji.html)")
+    risk_sim_flags(ch)
 
     an = sub.add_parser("analyze", help="Surekli analiz: bosta bile tarar, Telegram'a rapor atar")
     an.add_argument("--symbols", default="BTCUSDT,ETHUSDT,EURUSD,XAUUSD",

@@ -61,7 +61,7 @@ def render_html(result: Result, candles: list[Candle], title: str) -> str:
     trade_rows = "".join(
         f"<tr><td>{i}</td><td>{t.entry_price:,.4f}</td><td>{t.exit_price:,.4f}</td>"
         f"<td style='text-align:right;color:{'#0a7d38' if t.pnl_pct > 0 else '#c0392b'}'>"
-        f"{t.pnl_pct:+.2f}%</td></tr>"
+        f"{t.pnl_pct:+.2f}%</td><td>{t.reason}</td></tr>"
         for i, t in enumerate(result.trades, 1)
     )
 
@@ -87,5 +87,5 @@ garanti etmez; bu bir yatirim tavsiyesi degildir.</p>
 <h2>Ozet</h2>
 <table>{rows}</table>
 <h2>Islemler ({result.n_trades})</h2>
-<table><tr><th>#</th><th>Giris</th><th>Cikis</th><th>K/Z</th></tr>{trade_rows}</table>
+<table><tr><th>#</th><th>Giris</th><th>Cikis</th><th>K/Z</th><th>Neden</th></tr>{trade_rows}</table>
 """

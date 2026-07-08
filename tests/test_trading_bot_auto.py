@@ -316,3 +316,56 @@ def test_cooldown_blocks_reentry(tmp_path, monkeypatch):
     t._sell_all(97.0, "stop_loss")
     t._after_stop("2026-01-01")
     assert t.state["halted_day"] == "2026-01-01"
+
+
+def _mk(ts, o, h, l, c):
+    return data.Candle(ts=ts, open=o, high=h, low=l, close=c, volume=1)
+
+
+def test_backtest_stop_loss_triggers_intrabar():
+    from bot.backtest import run_backtest
+    from bot.strategies import BuyHold
+
+    candles = [
+        _mk(1, 100, 101, 99, 100),   # sinyal mumu
+        _mk(2, 100, 102, 100, 101),  # giris @ 100 (acilis)
+        _mk(3, 101, 103, 94, 95),    # dip 94 -> %2 stop (98) mum icinde vurulur
+        _mk(4, 95, 96, 94, 95),
+    ]
+    res = run_backtest(candles, BuyHold(), commission_pct=0, slippage_pct=0,
+                       stop_loss_pct=2.0, cooldown_bars=10)
+    stops = [t for t in res.trades if t.reason == "stop_loss"]
+    assert len(stops) == 1
+    assert abs(stops[0].exit_price - 98.0) < 1e-9   # tam stop fiyatindan cikis
+    assert abs(stops[0].pnl_pct - (-2.0)) < 1e-9
+    # cooldown sayesinde tekrar giris yok (BuyHold hep 1 istemesine ragmen)
+    assert len(res.trades) == 1
+
+
+def test_backtest_take_profit_triggers_intrabar():
+    from bot.backtest import run_backtest
+    from bot.strategies import BuyHold
+
+    candles = [
+        _mk(1, 100, 101, 99, 100),
+        _mk(2, 100, 100, 99, 100),   # giris @ 100
+        _mk(3, 100, 106, 100, 105),  # tepe 106 -> %4 hedef (104) vurulur
+        _mk(4, 105, 106, 104, 105),
+    ]
+    res = run_backtest(candles, BuyHold(), commission_pct=0, slippage_pct=0,
+                       take_profit_pct=4.0)
+    tps = [t for t in res.trades if t.reason == "take_profit"]
+    assert len(tps) == 1 and abs(tps[0].exit_price - 104.0) < 1e-9
+
+
+def test_backtest_no_risk_flags_matches_old_behavior():
+    from bot.backtest import run_backtest
+    from bot.strategies import SmaCross
+
+    candles = data.synthetic(n=500, seed=15)
+    plain = run_backtest(candles, SmaCross(10, 30))
+    with_off_flags = run_backtest(candles, SmaCross(10, 30),
+                                  stop_loss_pct=0, take_profit_pct=0,
+                                  trailing_stop_pct=0, cooldown_bars=0)
+    assert plain.end_equity == with_off_flags.end_equity
+    assert all(t.reason in ("sinyal", "acik") for t in plain.trades)
