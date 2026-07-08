@@ -110,6 +110,7 @@ def walk_forward(
     segments: int = 5,
     commission_pct: float = 0.1,
     slippage_pct: float = 0.05,
+    **risk_kwargs,
 ) -> list[float]:
     """Walk-forward testi: veriyi ardisik dilimlere boler, stratejiyi her
     dilimde AYRI calistirir ve dilim getirilerini dondurur.
@@ -126,7 +127,10 @@ def walk_forward(
     returns: list[float] = []
     for i in range(segments):
         chunk = candles[i * seg_len:(i + 1) * seg_len]
-        r = run_backtest(chunk, strategy, commission_pct=commission_pct, slippage_pct=slippage_pct)
+        r = run_backtest(
+            chunk, strategy,
+            commission_pct=commission_pct, slippage_pct=slippage_pct, **risk_kwargs,
+        )
         returns.append(r.total_return_pct)
     return returns
 

@@ -369,3 +369,32 @@ def test_backtest_no_risk_flags_matches_old_behavior():
                                   trailing_stop_pct=0, cooldown_bars=0)
     assert plain.end_equity == with_off_flags.end_equity
     assert all(t.reason in ("sinyal", "acik") for t in plain.trades)
+
+
+def test_equity_history_recorded_and_capped(tmp_path, monkeypatch):
+    from bot import trader as trader_mod
+    from bot.exchange import BinanceSpot
+    from bot.strategies import BuyHold
+    from bot.trader import Trader, TraderConfig
+
+    monkeypatch.setattr(trader_mod, "_BASE_DIR", str(tmp_path))
+    t = Trader(BuyHold(), TraderConfig(symbol="TESTUSDT", mode="paper", start_equity=1000.0),
+               BinanceSpot(testnet=False))
+    for i in range(5010):
+        t._record_equity(1000.0 + i)
+    hist = t.state["equity_history"]
+    assert len(hist) == 5000            # tavan calisiyor
+    assert hist[-1][1] == 1000.0 + 5009  # en yeni kayit korunuyor
+
+
+def test_render_live_html():
+    from bot.report_html import render_live_html
+
+    histories = {
+        "BTCUSDT": [[1, 1000.0], [2, 1010.0], [3, 990.0]],
+        "ETHUSDT": [[1, 500.0], [2, 505.0], [3, 520.0]],
+        "BOS": [[1, 100.0]],  # tek nokta cizilmez, sessizce atlanir
+    }
+    html = render_live_html(histories, "Portfoy")
+    assert "<svg" in html and html.count("polyline") == 2
+    assert "BTCUSDT" in html and "+4.00%" in html  # ETH degisimi

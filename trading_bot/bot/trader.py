@@ -148,6 +148,7 @@ class Trader:
         closed = candles[:-1]
         price = candles[-1].close
         equity = self.equity(price)
+        self._record_equity(equity)
         today = time.strftime("%Y-%m-%d")
 
         if self.state["day"] != today:
@@ -203,6 +204,13 @@ class Trader:
                 f"bekle (fiyat {price}, {'pozisyonda' if in_position else 'nakitte'})",
                 equity,
             )
+
+    def _record_equity(self, equity: float) -> None:
+        """Her turda portfoy degerini tarihceye ekler (report --html grafigi icin)."""
+        hist = self.state.setdefault("equity_history", [])
+        hist.append([int(time.time() * 1000), round(equity, 2)])
+        if len(hist) > 5000:  # dosya sisip durmasin
+            del hist[: len(hist) - 5000]
 
     def _after_stop(self, today: str) -> None:
         """Stop-loss sonrasi korumalar (freqtrade Protections'tan uyarlama):

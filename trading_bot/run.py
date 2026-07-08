@@ -269,7 +269,11 @@ def cmd_walkforward(args: argparse.Namespace) -> None:
     print(UYARI)
     candles = get_candles(args)
     strategy = build_strategy(args)
-    returns = scanner.walk_forward(candles, strategy, segments=args.segments)
+    returns = scanner.walk_forward(
+        candles, strategy, segments=args.segments,
+        stop_loss_pct=args.stop_loss, take_profit_pct=args.take_profit,
+        trailing_stop_pct=args.trailing_stop, cooldown_bars=args.cooldown,
+    )
     print(f"Strateji: {strategy.name}, veri: {args.source} ({len(candles)} mum), "
           f"{args.segments} dilim\n")
     positive = 0
@@ -299,6 +303,7 @@ def cmd_report(args: argparse.Namespace) -> None:
         sys.exit("Henuz islem durumu yok. Once `trade` komutunu calistir.")
     ex = BinanceSpot(testnet=False)
     total = 0.0
+    histories: dict[str, list] = {}
     print(f"{'Sembol':<10} {'Nakit':>10} {'Adet':>12} {'Deger':>10} {'Pozisyon'}")
     for path in files:
         with open(path, encoding="utf-8") as f:
@@ -322,7 +327,16 @@ def cmd_report(args: argparse.Namespace) -> None:
         buys = sum(1 for line in st.get("log", []) if "ALIM" in line)
         sells = sum(1 for line in st.get("log", []) if "SATIS" in line)
         print(f"{'':<10} islem gecmisi: {buys} alim, {sells} satis")
+        histories[symbol] = st.get("equity_history", [])
     print(f"\nToplam portfoy degeri: {total:.2f}")
+
+    if args.html:
+        from bot.report_html import render_live_html
+
+        out = os.path.join(base, "report_portfoy.html")
+        with open(out, "w", encoding="utf-8") as f:
+            f.write(render_live_html(histories, "Zenith portfoy tarihcesi"))
+        print(f"HTML grafik yazildi: {out}")
 
 
 def cmd_chart(args: argparse.Namespace) -> None:
@@ -489,6 +503,7 @@ def main() -> None:
     wf.add_argument("--csv", help="CSV dosya yolu (--source csv icin)")
     wf.add_argument("--seed", type=int, default=42)
     wf.add_argument("--segments", type=int, default=5, help="Dilim sayisi")
+    risk_sim_flags(wf)
 
     ch = sub.add_parser("chart", help="Backtest + equity egrisi grafikli HTML rapor")
     common(ch)
@@ -508,7 +523,8 @@ def main() -> None:
     an.add_argument("--every-hours", type=float, default=6.0, help="Tur araligi (saat)")
     an.add_argument("--once", action="store_true", help="Tek tur calis ve cik")
 
-    sub.add_parser("report", help="Sanal portfoy durum raporu")
+    rp = sub.add_parser("report", help="Sanal portfoy durum raporu")
+    rp.add_argument("--html", action="store_true", help="Portfoy tarihcesi HTML grafigi uret")
     sub.add_parser("notify-test", help="Telegram baglantisini kur ve test mesaji at")
 
     args = p.parse_args()

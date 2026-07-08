@@ -27,6 +27,49 @@ def _polyline(values: list[float], lo: float, hi: float, color: str, width: int 
     )
 
 
+_COLORS = ["#1668c7", "#c0392b", "#0a7d38", "#8e44ad", "#d35400", "#16a085"]
+
+
+def render_live_html(histories: dict[str, list[list[float]]], title: str) -> str:
+    """Canli/paper botun sembol basina portfoy deger tarihcesini cizer.
+
+    histories: {"BTCUSDT": [[ts_ms, equity], ...], ...}
+    """
+    series = {s: [p[1] for p in h] for s, h in histories.items() if len(h) >= 2}
+    if not series:
+        return (
+            "<meta charset='utf-8'><p>Henuz yeterli veri yok - bot birkac tur "
+            "calistiktan sonra tekrar dene.</p>"
+        )
+    lo = min(min(v) for v in series.values())
+    hi = max(max(v) for v in series.values())
+    lines, legend = [], []
+    for idx, (sym, values) in enumerate(sorted(series.items())):
+        color = _COLORS[idx % len(_COLORS)]
+        lines.append(_polyline(values, lo, hi, color))
+        first, last = values[0], values[-1]
+        change = 100.0 * (last / first - 1) if first else 0.0
+        legend.append(
+            f'<tr><td style="color:{color}">■ {sym}</td>'
+            f"<td>{first:,.2f}</td><td>{last:,.2f}</td>"
+            f"<td style='text-align:right'>{change:+.2f}%</td></tr>"
+        )
+    return f"""<meta charset="utf-8">
+<title>{title}</title>
+<style>
+ body{{font-family:system-ui,sans-serif;max-width:960px;margin:24px auto;padding:0 12px;color:#222}}
+ table{{border-collapse:collapse;margin:12px 0}} td,th{{border:1px solid #ddd;padding:6px 12px}}
+</style>
+<h1>{title}</h1>
+<svg viewBox="0 0 {_W} {_H}" style="width:100%;background:#fafafa;border:1px solid #eee">
+{"".join(lines)}
+</svg>
+<table><tr><th>Sembol</th><th>Baslangic</th><th>Son</th><th>Degisim</th></tr>
+{"".join(legend)}</table>
+<p><i>Egitim amacli rapor; gecmis performans gelecegi garanti etmez.</i></p>
+"""
+
+
 def render_html(result: Result, candles: list[Candle], title: str) -> str:
     equity = result.equity_curve
     # al-ve-tut kiyas egrisi: ayni baslangic sermayesiyle ilk mumda al, tut
