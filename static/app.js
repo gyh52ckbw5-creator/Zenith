@@ -621,11 +621,14 @@ if (recognition) {
   try {
     const res = await fetch("/api/models");
     const data = await res.json();
-    for (const m of data.detail || []) {
-      if (!m.ready) continue;
+    const models = [...(data.detail || [])].sort((a, b) => b.ready - a.ready);
+    for (const m of models) {
       const opt = document.createElement("option");
       opt.value = m.name;
-      opt.textContent = m.name;
+      // Hazir olmayanlar da listelenir ama secilemez: kullanici hangi ucretsiz
+      // modellerin anahtarla acilacagini gorsun (README: OPENROUTER_API_KEY).
+      opt.textContent = m.ready ? m.name : `${m.name} — anahtar gerekli`;
+      opt.disabled = !m.ready;
       modelSelect.appendChild(opt);
     }
   } catch {
