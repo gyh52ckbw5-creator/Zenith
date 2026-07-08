@@ -51,6 +51,42 @@ def rsi(values: list[float], period: int = 14) -> list[float | None]:
     return out
 
 
+def bollinger(
+    values: list[float], period: int = 20, k: float = 2.0
+) -> tuple[list[float | None], list[float | None], list[float | None]]:
+    """Bollinger bantlari: (orta=SMA, ust, alt). k = standart sapma katsayisi."""
+    mid = sma(values, period)
+    upper: list[float | None] = [None] * len(values)
+    lower: list[float | None] = [None] * len(values)
+    for i in range(period - 1, len(values)):
+        window = values[i - period + 1 : i + 1]
+        mean = mid[i]
+        std = (sum((v - mean) ** 2 for v in window) / period) ** 0.5
+        upper[i] = mean + k * std
+        lower[i] = mean - k * std
+    return mid, upper, lower
+
+
+def macd(
+    values: list[float], fast: int = 12, slow: int = 26, signal: int = 9
+) -> tuple[list[float | None], list[float | None]]:
+    """MACD: (macd cizgisi, sinyal cizgisi). macd = EMA(fast) - EMA(slow)."""
+    f, s = ema(values, fast), ema(values, slow)
+    line: list[float | None] = [
+        f[i] - s[i] if f[i] is not None and s[i] is not None else None
+        for i in range(len(values))
+    ]
+    valid = [v for v in line if v is not None]
+    sig_valid = ema(valid, signal)
+    sig: list[float | None] = [None] * len(values)
+    j = 0
+    for i in range(len(values)):
+        if line[i] is not None:
+            sig[i] = sig_valid[j]
+            j += 1
+    return line, sig
+
+
 def atr(
     highs: list[float], lows: list[float], closes: list[float], period: int = 14
 ) -> list[float | None]:

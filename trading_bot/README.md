@@ -213,6 +213,10 @@ kendin keşfedeceksin:
 - [x] Forex/altın veri kaynağı (Yahoo Finance: EURUSD, XAUUSD, USDTRY... anahtar gerekmez)
 - [x] Sürekli analiz modu (`analyze`): bot boştayken bile düzenli tarar, Telegram'a rapor atar
 - [x] Ücretsiz AI yorumcu (isteğe bağlı, OpenRouter)
+- [x] Equity eğrisi HTML raporu (`chart`)
+- [x] Binance LOT_SIZE/stepSize otomatik yuvarlama
+- [x] Bollinger + MACD stratejileri (tarama ızgarası 13 kombinasyona çıktı)
+- [x] Korumalar: cooldown + stop-loss guard (freqtrade Protections uyarlaması)
 
 **Sırada:**
 - [ ] Equity eğrisi grafiği (HTML rapor)
@@ -281,6 +285,35 @@ journalctl -u zenith-bot -f              # canli log izle
 
 Bot çökse/sunucu yeniden başlasa bile `Restart=always` + durum dosyaları
 sayesinde kaldığı yerden devam eder; işlemler Telegram'dan cebine düşer.
+
+## 6c. Korumalar (freqtrade'in Protections sisteminden uyarlama)
+
+`trade` komutunda varsayılan olarak açık iki koruma daha var:
+
+- **Cooldown** (`--cooldown 3`): stop yedikten sonra 3 mum boyunca yeni
+  giriş yasak. Amaç, kaybı hemen geri alma dürtüsüyle yapılan "intikam
+  işlemini" engellemek — hesap batıran davranışların başında gelir.
+- **Stop-loss guard** (`--stoploss-guard 3`): aynı gün 3 kez stop
+  yenirse bot o günü tamamen kapatır. O gün piyasa senin stratejinle
+  uyumsuz demektir; ısrar etmek çözüm değildir.
+
+## 6d. Açık kaynak dünyası: bu kitten sonrası
+
+Bu kit öğrenmek için; ciddileşince tekerleği yeniden icat etme, olgun
+açık kaynak projelere geç:
+
+| Proje | Ne işe yarar | Not |
+|---|---|---|
+| [freqtrade](https://www.freqtrade.io) | Kripto sinyal botu (25k+ yıldız) | Hyperopt optimizasyonu, FreqAI ML, Telegram kontrolü, koruma sistemi — bizim kitin endüstriyel hali |
+| [Hummingbot](https://hummingbot.org) | Market making (piyasa yapıcılık) | Alış-satış makası kazancı; farklı bir oyun, ileri seviye |
+| [Jesse](https://jesse.trade) | Backtest odaklı framework | Look-ahead bias'sız motor — bizim motorla aynı felsefe |
+| [OctoBot](https://www.octobot.cloud) | Başlangıç dostu bot | Kod yazmadan kullanılabiliyor |
+| [vectorbt](https://vectorbt.dev) | Çok hızlı toplu backtest | Binlerce parametre kombinasyonunu dakikalar içinde tarar |
+| [ccxt](https://github.com/ccxt/ccxt) | 100+ borsa API kütüphanesi | Bizim `exchange.py`'nin çok-borsalı devi |
+
+Uyarı: freqtrade topluluğunun hazır stratejileri de (NostalgiaForInfinity
+vb.) geçmişe göre ayarlanmıştır — hangisini alırsan al, kendi walk-forward
+testinden geçirmeden canlıya yaklaştırma.
 
 ## 7. Yasal uyarı
 

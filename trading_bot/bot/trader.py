@@ -140,7 +140,8 @@ class Trader:
 
     # -- tek tur -----------------------------------------------------------
     def step(self) -> None:
-        candles = self.ex.klines(self.cfg.symbol, self.cfg.interval, 250)
+        # 400 mum: trend filtresi (200) gibi uzun isinmali stratejilere yeterli pay
+        candles = self.ex.klines(self.cfg.symbol, self.cfg.interval, 400)
         # Son mum hala olusuyor: sinyal SADECE kapanmis mumlardan uretilir,
         # yoksa mum ici salinimlar ac-kapa yaptirir (backtestteki look-ahead
         # yasaginin canli karsiligi). Guncel fiyat ise emir/stop icin kullanilir.
@@ -152,6 +153,7 @@ class Trader:
         if self.state["day"] != today:
             self.state["day"] = today
             self.state["day_start_equity"] = equity
+            self.state["stops_today"] = 0
 
         # gunluk zarar freni
         if self.state["halted_day"] == today:
@@ -184,10 +186,15 @@ class Trader:
                 reason = "trailing_stop"
             if reason:
                 self._sell_all(price, reason)
+                if "stop" in reason:
+                    self._after_stop(today)
                 return
 
         target = self.strategy.target_positions(closed)[-1]
         if target == 1 and not in_position:
+            if time.time() < self.state.get("cooldown_until", 0):
+                self._log("cooldown: stop sonrasi bekleme suresi, giris yok", equity)
+                return
             self._buy(price, position_size_quote(equity, self.risk), closed)
         elif target == 0 and in_position:
             self._sell_all(price, "strateji sinyali")
@@ -195,6 +202,23 @@ class Trader:
             self._log(
                 f"bekle (fiyat {price}, {'pozisyonda' if in_position else 'nakitte'})",
                 equity,
+            )
+
+    def _after_stop(self, today: str) -> None:
+        """Stop-loss sonrasi korumalar (freqtrade Protections'tan uyarlama):
+        cooldown yeni girisi geciktirir, stoploss guard seri stop yenirse
+        gunu tamamen kapatir."""
+        if self.risk.cooldown_bars > 0:
+            wait = self.risk.cooldown_bars * INTERVAL_SEC.get(self.cfg.interval, 3600)
+            self.state["cooldown_until"] = time.time() + wait
+            self._log(f"cooldown basladi: {self.risk.cooldown_bars} mum giris yok", 0.0)
+        self.state["stops_today"] = self.state.get("stops_today", 0) + 1
+        if 0 < self.risk.stoploss_guard <= self.state["stops_today"]:
+            self.state["halted_day"] = today
+            self._log(
+                f"STOPLOSS GUARD: bugun {self.state['stops_today']} stop yendi, gun kapatildi",
+                0.0,
+                notify=True,
             )
 
     def run_forever(self) -> None:

@@ -17,7 +17,15 @@ from typing import Callable
 
 from .backtest import run_backtest
 from .data import Candle
-from .strategies import DonchianBreakout, EmaCross, RsiReversion, SmaCross, Strategy
+from .strategies import (
+    BollingerReversion,
+    DonchianBreakout,
+    EmaCross,
+    MacdCross,
+    RsiReversion,
+    SmaCross,
+    Strategy,
+)
 
 
 def default_grid() -> list[Strategy]:
@@ -31,6 +39,8 @@ def default_grid() -> list[Strategy]:
         grid.append(RsiReversion(period, lo, hi))
     for entry, exit_ in [(20, 10), (55, 20)]:  # klasik Turtle parametreleri
         grid.append(DonchianBreakout(entry, exit_))
+    grid.append(BollingerReversion(20, 2.0))
+    grid.append(MacdCross())
     return grid
 
 

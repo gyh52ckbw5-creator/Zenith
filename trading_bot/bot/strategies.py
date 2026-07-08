@@ -8,7 +8,7 @@ Kisa (short) pozisyon bilerek yok: egitim amacli ve long-only tutulmustur.
 from __future__ import annotations
 
 from .data import Candle
-from .indicators import ema, rsi, sma
+from .indicators import bollinger, ema, macd, rsi, sma
 
 
 class Strategy:
@@ -123,6 +123,48 @@ class BuyHold(Strategy):
         return [1] * len(candles)
 
 
+class BollingerReversion(Strategy):
+    """Fiyat alt banda dokununca al, orta banda (SMA) donunce sat.
+
+    Klasik ortalamaya donus: yatay/salinan piyasada calisir, guclu
+    dusus trendinde arka arkaya erken giris yapabilir.
+    """
+
+    def __init__(self, period: int = 20, k: float = 2.0):
+        self.period, self.k = period, k
+        self.name = f"bollinger({period},{k:g})"
+
+    def target_positions(self, candles: list[Candle]) -> list[int]:
+        closes = [c.close for c in candles]
+        mid, _, lower = bollinger(closes, self.period, self.k)
+        out: list[int] = []
+        pos = 0
+        for i, c in enumerate(closes):
+            if lower[i] is not None:
+                if pos == 0 and c < lower[i]:
+                    pos = 1
+                elif pos == 1 and mid[i] is not None and c > mid[i]:
+                    pos = 0
+            out.append(pos)
+        return out
+
+
+class MacdCross(Strategy):
+    """MACD cizgisi sinyal cizgisinin ustundeyken long, altindayken nakit."""
+
+    def __init__(self, fast: int = 12, slow: int = 26, signal: int = 9):
+        self.fast, self.slow, self.signal = fast, slow, signal
+        self.name = f"macd({fast},{slow},{signal})"
+
+    def target_positions(self, candles: list[Candle]) -> list[int]:
+        closes = [c.close for c in candles]
+        line, sig = macd(closes, self.fast, self.slow, self.signal)
+        return [
+            1 if line[i] is not None and sig[i] is not None and line[i] > sig[i] else 0
+            for i in range(len(closes))
+        ]
+
+
 class TrendFilter(Strategy):
     """Baska bir stratejiyi sarmalar: fiyat uzun donem SMA'nin (varsayilan
     200) ustundeyken al sinyallerine izin verir, altindayken hepsini iptal
@@ -147,5 +189,7 @@ STRATEGIES = {
     "ema": EmaCross,
     "rsi": RsiReversion,
     "donchian": DonchianBreakout,
+    "bollinger": BollingerReversion,
+    "macd": MacdCross,
     "hold": BuyHold,
 }

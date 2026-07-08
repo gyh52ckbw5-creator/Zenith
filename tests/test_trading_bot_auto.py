@@ -269,3 +269,50 @@ def test_render_html_contains_svg_and_stats():
     assert "<svg" in html and "polyline" in html
     assert "Toplam getiri" in html and "Test Raporu" in html
     assert "Uyari" in html  # egitim uyarisi her raporda olmali
+
+
+def test_bollinger_and_macd_strategies():
+    from bot.backtest import run_backtest
+    from bot.strategies import BollingerReversion, MacdCross
+
+    candles = data.synthetic(n=600, seed=13)
+    for strat in (BollingerReversion(20, 2.0), MacdCross()):
+        positions = strat.target_positions(candles)
+        assert len(positions) == len(candles)
+        assert set(positions) <= {0, 1}
+        res = run_backtest(candles, strat)
+        assert len(res.equity_curve) == len(candles)
+
+
+def test_bollinger_bands_order():
+    from bot.indicators import bollinger
+
+    closes = [c.close for c in data.synthetic(n=100, seed=14)]
+    mid, upper, lower = bollinger(closes, 20, 2.0)
+    for i in range(len(closes)):
+        if mid[i] is not None:
+            assert lower[i] < mid[i] < upper[i]
+
+
+def test_cooldown_blocks_reentry(tmp_path, monkeypatch):
+    import time as _time
+
+    from bot import trader as trader_mod
+    from bot.exchange import BinanceSpot
+    from bot.strategies import BuyHold
+    from bot.trader import Trader, TraderConfig
+
+    monkeypatch.setattr(trader_mod, "_BASE_DIR", str(tmp_path))
+    cfg = TraderConfig(symbol="TESTUSDT", mode="paper", start_equity=1000.0,
+                       risk=RiskConfig(cooldown_bars=3, stoploss_guard=2))
+    t = Trader(BuyHold(), cfg, BinanceSpot(testnet=False))
+    t.state.update({"cash": 0.0, "qty": 1.0, "entry_price": 100.0})
+    t._sell_all(97.0, "stop_loss")
+    t._after_stop("2026-01-01")
+    assert t.state["cooldown_until"] > _time.time()  # giris kilitli
+    assert t.state["stops_today"] == 1
+    # ikinci stop guard limitine carpar, gun kapanir
+    t.state.update({"cash": 0.0, "qty": 1.0, "entry_price": 100.0})
+    t._sell_all(97.0, "stop_loss")
+    t._after_stop("2026-01-01")
+    assert t.state["halted_day"] == "2026-01-01"

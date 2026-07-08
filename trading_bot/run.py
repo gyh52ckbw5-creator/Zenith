@@ -205,6 +205,8 @@ def cmd_trade(args: argparse.Namespace) -> None:
         max_daily_loss_pct=args.max_daily_loss,
         trailing_stop_pct=args.trailing_stop,
         atr_stop_mult=args.atr_stop,
+        cooldown_bars=args.cooldown,
+        stoploss_guard=args.stoploss_guard,
     )
     api_key = os.environ.get("BINANCE_API_KEY", "")
     api_secret = os.environ.get("BINANCE_API_SECRET", "")
@@ -462,6 +464,10 @@ def main() -> None:
                     help="Iz suren stop %% (tepe fiyattan geri cekilme; 0 = kapali)")
     tr.add_argument("--atr-stop", type=float, default=0.0,
                     help="ATR stop katsayisi, ör. 2.0 (0 = kapali; aciksa sabit stop yerine gecer)")
+    tr.add_argument("--cooldown", type=int, default=3,
+                    help="Stop sonrasi kac mum yeni giris yok (0 = kapali)")
+    tr.add_argument("--stoploss-guard", type=int, default=3,
+                    help="Ayni gun bu kadar stop yenirse gunu kapat (0 = kapali)")
     tr.add_argument("--riski-anladim", action="store_true",
                     help="live mod onayi: gercek para kaybedebilecegimi anladim")
 

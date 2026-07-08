@@ -21,6 +21,11 @@ class RiskConfig:
     trailing_stop_pct: float = 0.0    # tepe fiyattan bu kadar dusunce kes (0 = kapali)
     atr_stop_mult: float = 0.0        # stop = giris - ATR x bu katsayi (0 = kapali,
                                       # aciksa sabit stop_loss_pct yerine gecer)
+    # freqtrade'in "Protections" sisteminden uyarlanan korumalar:
+    cooldown_bars: int = 0            # stop yedikten sonra bu kadar mum yeni giris yok
+                                      # (intikam islemini engeller; 0 = kapali)
+    stoploss_guard: int = 0           # ayni gun bu kadar stop-loss olursa gunu kapat
+                                      # (0 = kapali)
 
     def validate(self) -> None:
         if not (0 < self.risk_pct_per_trade <= 5):
