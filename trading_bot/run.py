@@ -581,6 +581,7 @@ def main() -> None:
     rp = sub.add_parser("report", help="Sanal portfoy durum raporu")
     rp.add_argument("--html", action="store_true", help="Portfoy tarihcesi HTML grafigi uret")
     sub.add_parser("notify-test", help="Telegram baglantisini kur ve test mesaji at")
+    sub.add_parser("telegram", help="Telegram komut servisi: /durum /fiyat /analiz /rapor")
 
     args = p.parse_args()
     if args.cmd == "backtest":
@@ -601,6 +602,11 @@ def main() -> None:
         cmd_report(args)
     elif args.cmd == "notify-test":
         cmd_notify_test(args)
+    elif args.cmd == "telegram":
+        from bot.telegram_bot import TelegramCommander
+
+        print(UYARI)
+        TelegramCommander().run_forever()
     else:
         cmd_paper(args)
 

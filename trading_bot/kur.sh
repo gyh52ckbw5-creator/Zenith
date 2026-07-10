@@ -58,8 +58,23 @@ RestartSec=60
 WantedBy=multi-user.target
 EOF
 
+$SUDO tee /etc/systemd/system/zenith-telegram.service >/dev/null <<EOF
+[Unit]
+Description=Zenith Telegram komut servisi
+After=network-online.target
+
+[Service]
+WorkingDirectory=$BOT_DIR
+ExecStart=$PY run.py telegram
+Restart=always
+RestartSec=15
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
 $SUDO systemctl daemon-reload
-$SUDO systemctl enable --now zenith-trader zenith-analyze
+$SUDO systemctl enable --now zenith-trader zenith-analyze zenith-telegram
 
 echo ""
 echo "Kurulum tamam! Kontrol komutlari:"

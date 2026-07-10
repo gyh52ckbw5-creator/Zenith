@@ -459,3 +459,28 @@ def test_symbol_presets_expand():
     assert run.parse_symbols("kripto") == ["BTCUSDT", "ETHUSDT", "SOLUSDT"]
     assert run.parse_symbols("BTCUSDT, eurusd") == ["BTCUSDT", "EURUSD"]  # normal liste bozulmaz
     assert "XAUUSD" in run.parse_symbols("FOREX,DOGEUSDT")  # kisayol + ek sembol karisabilir
+
+
+def test_telegram_commander_handle(tmp_path, monkeypatch):
+    import json as _json
+
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "x")
+    monkeypatch.setenv("TELEGRAM_CHAT_ID", "1")
+    from bot import telegram_bot
+
+    monkeypatch.setattr(telegram_bot, "_BASE_DIR", str(tmp_path))
+    (tmp_path / "trader_state_BTCUSDT.json").write_text(
+        _json.dumps({"cash": 0.0, "qty": 1.0, "equity_history": [[1, 1000.0], [2, 1050.0]]})
+    )
+    (tmp_path / "trades_BTCUSDT.csv").write_text(
+        "zaman,mod,sembol,giris,cikis,kz_yuzde,neden\n2026-01-01,paper,BTCUSDT,100,110,10,test\n"
+    )
+    c = telegram_bot.TelegramCommander()
+    monkeypatch.setattr(c, "_fiyat", lambda s: f"{s}: 42")  # ag cagrisi yok
+
+    assert "1,050.00" in c.handle("/durum") and "pozisyonda" in c.handle("/durum")
+    assert c.handle("/fiyat btcusdt".upper()) == "BTCUSDT: 42"
+    assert "BTCUSDT,100,110,10,test" in c.handle("/rapor")
+    assert c.handle("/yardim") == telegram_bot.HELP_TEXT
+    assert c.handle("saçma bir mesaj") == telegram_bot.HELP_TEXT  # bilinmeyen -> yardim
+    assert c.handle("/durum@Z2nith_bot").startswith("Sanal portfoy")  # @bot eki ayiklanir
