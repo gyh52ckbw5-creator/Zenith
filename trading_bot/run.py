@@ -282,6 +282,7 @@ def cmd_trade(args: argparse.Namespace) -> None:
                 mode=args.mode,
                 start_equity=args.equity / len(symbols),  # paper: sanal bakiye esit bolunur
                 risk=risk,
+                news_filter=args.news_filter,
             ),
             ex,
         )
@@ -542,6 +543,8 @@ def main() -> None:
                     help="Ayni gun bu kadar stop yenirse gunu kapat (0 = kapali)")
     tr.add_argument("--riski-anladim", action="store_true",
                     help="live mod onayi: gercek para kaybedebilecegimi anladim")
+    tr.add_argument("--news-filter", action=argparse.BooleanOptionalAction, default=True,
+                    help="Buyuk haber saatlerinde yeni giris yapma (kapatmak: --no-news-filter)")
 
     wf = sub.add_parser("walkforward", help="Stratejiyi ardisik zaman dilimlerinde dogrula")
     common(wf)

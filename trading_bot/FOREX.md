@@ -108,8 +108,11 @@ ekle. Acele eden forex'e değil, spread'e yem olur.
 ## 4. Forex'e özel tuzaklar
 
 - **Haber anları:** NFP (ABD tarım dışı istihdam), faiz kararları... Spread
-  10 katına çıkar, stop'lar kayarak dolar. Botun bu saatlerde işlem
-  açmaması ileri seviye bir iyileştirmedir (yol haritasında).
+  10 katına çıkar, stop'lar kayarak dolar. **Bot artık bunu biliyor:**
+  `trade` komutunda haber karantinası varsayılan açıktır — yüksek etkili
+  haberlerin ±30 dakikasında yeni pozisyon açılmaz (ForexFactory ücretsiz
+  takvimi; ulaşılamazsa bot durmaz, filtre devre dışı kalır). Kapatmak
+  istersen: `--no-news-filter`.
 - **Swap:** Gecelik pozisyon taşımanın maliyeti/getirisi vardır; trend
   takibi gibi günlerce taşıyan stratejilerde backtest'in görmediği bir
   maliyettir. Demo döneminde hesap ekstresinden gerçek swap'ı gör.

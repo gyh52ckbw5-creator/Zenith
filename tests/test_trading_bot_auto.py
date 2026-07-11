@@ -484,3 +484,29 @@ def test_telegram_commander_handle(tmp_path, monkeypatch):
     assert c.handle("/yardim") == telegram_bot.HELP_TEXT
     assert c.handle("saçma bir mesaj") == telegram_bot.HELP_TEXT  # bilinmeyen -> yardim
     assert c.handle("/durum@Z2nith_bot").startswith("Sanal portfoy")  # @bot eki ayiklanir
+
+
+def test_symbol_currencies_mapping():
+    from bot.news import symbol_currencies
+
+    assert symbol_currencies("BTCUSDT") == {"USD"}
+    assert symbol_currencies("EURUSD") == {"EUR", "USD"}
+    assert symbol_currencies("XAUUSD") == {"USD"}
+    assert symbol_currencies("USDTRY") == {"USD", "TRY"}
+    assert "USD" in symbol_currencies("BILINMEYEN")  # varsayilan USD
+
+
+def test_news_blackout_window():
+    from bot.news import news_blackout
+
+    now = 1_700_000_000.0
+    events = [{"ts": now + 20 * 60, "country": "USD", "title": "FOMC"}]
+    blocked, event = news_blackout("BTCUSDT", now=now, window_min=30, events=events)
+    assert blocked and "FOMC" in event
+    # pencere disi (45 dk sonra) -> serbest
+    assert news_blackout("BTCUSDT", now=now - 26 * 60, window_min=30, events=events)[0] is False
+    # baska para birimi -> serbest
+    assert news_blackout("EURUSD", now=now, window_min=30,
+                         events=[{"ts": now, "country": "JPY", "title": "BoJ"}])[0] is False
+    # bos takvim -> serbest (fail-open)
+    assert news_blackout("BTCUSDT", now=now, events=[])[0] is False

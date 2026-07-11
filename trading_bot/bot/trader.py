@@ -20,6 +20,7 @@ from dataclasses import dataclass
 from .data import Candle
 from .exchange import BinanceSpot, ExchangeError
 from .indicators import atr
+from .news import news_blackout
 from .notify import send_telegram
 from .risk import RiskConfig, daily_kill_switch, exit_reason, position_size_quote, trailing_exit
 from .strategies import Strategy
@@ -40,6 +41,7 @@ class TraderConfig:
     mode: str = "paper"  # paper | testnet | live
     start_equity: float = 1000.0  # sadece paper modda kullanilir
     risk: RiskConfig | None = None
+    news_filter: bool = True  # buyuk haber saatlerinde yeni giris yapma
 
 
 class Trader:
@@ -196,6 +198,11 @@ class Trader:
             if time.time() < self.state.get("cooldown_until", 0):
                 self._log("cooldown: stop sonrasi bekleme suresi, giris yok", equity)
                 return
+            if self.cfg.news_filter:
+                blocked, event = news_blackout(self.cfg.symbol)
+                if blocked:
+                    self._log(f"haber karantinasi ({event}), giris yok", equity)
+                    return
             self._buy(price, position_size_quote(equity, self.risk), closed)
         elif target == 0 and in_position:
             self._sell_all(price, "strateji sinyali")
