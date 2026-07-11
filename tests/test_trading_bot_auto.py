@@ -533,3 +533,40 @@ def test_full_report_sections():
         assert needle in report, needle
     # kisa veri durustce reddedilir
     assert "en az 260 mum" in full_report("X", candles[:100])
+
+
+def test_kelly_and_ruin_math():
+    from bot.mathrisk import kelly_fraction, risk_of_ruin
+
+    assert abs(kelly_fraction(0.55, 2.0) - 0.325) < 1e-9  # 0.55 - 0.45/2
+    assert kelly_fraction(0.5, 1.0) == 0.0                # kenar yok
+    assert kelly_fraction(0.3, 1.0) == 0.0                # negatif -> 0
+    assert risk_of_ruin(0.3, 1.0, 1.0) == 1.0             # kenarsiz oyun = iflas
+    # ayni kenarla daha buyuk islem riski -> daha yuksek iflas olasiligi
+    low = risk_of_ruin(0.55, 2.0, 0.5)
+    high = risk_of_ruin(0.55, 2.0, 5.0)
+    assert 0 <= low < high <= 1
+
+
+def test_trade_stats_and_format():
+    from bot.mathrisk import format_stats, trade_stats
+
+    pnls = [4.0, -2.0] * 10  # %50 kazanma, RR=2
+    st = trade_stats(pnls)
+    assert st.n == 20 and abs(st.win_rate - 0.5) < 1e-9
+    assert abs(st.expectancy_pct - 1.0) < 1e-9  # 0.5*4 - 0.5*2
+    assert abs(st.kelly - 0.25) < 1e-9
+    text = format_stats(st, current_risk_pct=1.0)
+    assert "YARIM Kelly" in text and "POZITIF" in text
+    assert "en az 10" in format_stats(trade_stats([1.0, -1.0]))
+
+
+def test_pearson_correlation():
+    from bot.mathrisk import pct_returns, pearson
+
+    a = [1.0, 1.1, 1.2, 1.15, 1.3, 1.4]
+    ra = pct_returns(a)
+    assert abs(pearson(ra, ra) - 1.0) < 1e-9
+    rb = [-v for v in ra]
+    assert abs(pearson(ra, rb) + 1.0) < 1e-9
+    assert pearson([0.1], [0.1]) == 0.0  # veri yetersiz -> notr

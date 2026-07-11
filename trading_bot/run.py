@@ -357,6 +357,25 @@ def cmd_report(args: argparse.Namespace) -> None:
         histories[symbol] = st.get("equity_history", [])
     print(f"\nToplam portfoy degeri: {total:.2f}")
 
+    # istatistik kosesi: kapanan islemlerden beklenti/Kelly/iflas olasiligi
+    pnls: list[float] = []
+    for path in glob.glob(os.path.join(base, "trades_*.csv")):
+        try:
+            with open(path, encoding="utf-8") as f:
+                for line in f.read().strip().splitlines()[1:]:
+                    parts = line.split(",")
+                    if len(parts) >= 6:
+                        pnls.append(float(parts[5]))
+        except (OSError, ValueError):
+            continue
+    if pnls:
+        from bot.mathrisk import format_stats, trade_stats
+
+        stats = trade_stats(pnls)
+        if stats:
+            print()
+            print(format_stats(stats))
+
     if args.html:
         from bot.report_html import render_live_html
 
@@ -421,12 +440,20 @@ def cmd_analyze(args: argparse.Namespace) -> None:
     tum piyasalari tarar, en iyi adaylari raporlar, Telegram'a gonderir."""
     print(UYARI)
     symbols = parse_symbols(args.symbols)
-    fetch = smart_fetch(args.interval, args.bars)
+    base_fetch = smart_fetch(args.interval, args.bars)
+    cache: dict[str, list[data.Candle]] = {}
+
+    def fetch(sym: str) -> list[data.Candle]:
+        if sym not in cache:
+            cache[sym] = base_fetch(sym)
+        return cache[sym]
+
     print(f"Surekli analiz: {', '.join(symbols)} ({args.interval}), "
           f"her {args.every_hours} saatte bir tur")
     print(f"Telegram: {'aktif' if telegram_configured() else 'kapali'}, "
           f"AI yorumcu: {'aktif' if ai_available() else 'kapali (OPENROUTER_API_KEY yok)'}\n")
     while True:
+        cache.clear()  # her tur taze veri
         stamp = time.strftime("%Y-%m-%d %H:%M")
         lines = [f"Zenith analiz turu - {stamp} ({args.interval})"]
         try:
@@ -440,6 +467,22 @@ def cmd_analyze(args: argparse.Namespace) -> None:
                              f"(dogrulama {pick.test_return_pct:+.2f}%)")
             else:
                 lines.append("Elemeyi gecen aday YOK - dogru hamle beklemek.")
+            # korelasyon uyarisi: ayni yone giden enstrumanlar tek bahistir
+            from bot.mathrisk import pct_returns, pearson
+
+            cached = [s for s in symbols if s in cache]
+            for i in range(len(cached)):
+                for j in range(i + 1, len(cached)):
+                    a, b = cached[i], cached[j]
+                    corr = pearson(
+                        pct_returns([c.close for c in cache[a]]),
+                        pct_returns([c.close for c in cache[b]]),
+                    )
+                    if corr >= 0.8:
+                        lines.append(
+                            f"Uyari: {a} ve {b} yuksek korele ({corr:.2f}) - "
+                            "ikisine birden girmek cesitlendirme degil, ayni bahsi buyutmektir."
+                        )
         except Exception as e:  # noqa: BLE001 - tur atlansin ama dongu olmesin
             lines.append(f"Analiz hatasi: {e}")
         summary = "\n".join(lines)

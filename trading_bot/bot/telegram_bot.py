@@ -150,7 +150,17 @@ class TelegramCommander:
                 continue
         if not rows:
             return "Henuz kapanan islem yok."
-        return "Son islemler (zaman,mod,sembol,giris,cikis,k/z%,neden):\n" + "\n".join(rows[-10:])
+        out = "Son islemler (zaman,mod,sembol,giris,cikis,k/z%,neden):\n" + "\n".join(rows[-10:])
+        try:
+            from .mathrisk import format_stats, trade_stats
+
+            pnls = [float(r.split(",")[5]) for r in rows if len(r.split(",")) >= 6]
+            stats = trade_stats(pnls)
+            if stats:
+                out += "\n\n" + format_stats(stats)
+        except (ValueError, IndexError):
+            pass
+        return out
 
     # -- dongu -------------------------------------------------------------
     def run_forever(self) -> None:
