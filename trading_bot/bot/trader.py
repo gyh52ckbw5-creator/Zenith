@@ -19,7 +19,7 @@ from dataclasses import dataclass
 
 from .data import Candle
 from .exchange import BinanceSpot, ExchangeError
-from .indicators import atr
+from .indicators import atr, sma
 from .news import news_blackout
 from .notify import send_telegram
 from .risk import RiskConfig, daily_kill_switch, exit_reason, position_size_quote, trailing_exit
@@ -42,6 +42,7 @@ class TraderConfig:
     start_equity: float = 1000.0  # sadece paper modda kullanilir
     risk: RiskConfig | None = None
     news_filter: bool = True  # buyuk haber saatlerinde yeni giris yapma
+    mtf_daily: bool = True    # coklu zaman dilimi onayi: gunluk SMA200 altinda long yok
 
 
 class Trader:
@@ -53,6 +54,7 @@ class Trader:
         self.ex = exchange
         self.state_file = state_path(cfg.symbol)
         self.state = self._load_state()
+        self._daily_cache: tuple[str, bool] | None = None  # (gun, trend_uygun_mu)
 
     # -- durum -----------------------------------------------------------
     def _load_state(self) -> dict:
@@ -203,6 +205,9 @@ class Trader:
                 if blocked:
                     self._log(f"haber karantinasi ({event}), giris yok", equity)
                     return
+            if not self._daily_trend_ok():
+                self._log("gunluk trend (SMA200) asagi yonlu, long giris yok", equity)
+                return
             self._buy(price, position_size_quote(equity, self.risk), closed)
         elif target == 0 and in_position:
             self._sell_all(price, "strateji sinyali")
@@ -211,6 +216,29 @@ class Trader:
                 f"bekle (fiyat {price}, {'pozisyonda' if in_position else 'nakitte'})",
                 equity,
             )
+
+    def _daily_trend_ok(self) -> bool:
+        """Coklu zaman dilimi onayi: kucuk periyotta islem yapiliyorsa bile
+        GUNLUK kapanis SMA200'un ustunde olmali. Ust zaman dilimi nehir,
+        alt zaman dilimi dalgadir - nehre karsi yuzulmez.
+
+        Gunde bir kez hesaplanir (onbellek); veri yetersizse veya gunluk
+        periyotta calisiliyorsa filtre devre disi (fail-open).
+        """
+        if not self.cfg.mtf_daily or self.cfg.interval == "1d":
+            return True
+        today = time.strftime("%Y-%m-%d")
+        if self._daily_cache and self._daily_cache[0] == today:
+            return self._daily_cache[1]
+        try:
+            daily = self.ex.klines(self.cfg.symbol, "1d", 260)[:-1]  # kapanmis gunler
+            closes = [c.close for c in daily]
+            s200 = sma(closes, 200)[-1] if len(closes) >= 200 else None
+            ok = True if s200 is None else closes[-1] > s200
+        except Exception:  # noqa: BLE001 - veri sorunu botu durdurmasin
+            ok = True
+        self._daily_cache = (today, ok)
+        return ok
 
     def _record_equity(self, equity: float) -> None:
         """Her turda portfoy degerini tarihceye ekler (report --html grafigi icin)."""

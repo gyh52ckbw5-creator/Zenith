@@ -570,3 +570,31 @@ def test_pearson_correlation():
     rb = [-v for v in ra]
     assert abs(pearson(ra, rb) + 1.0) < 1e-9
     assert pearson([0.1], [0.1]) == 0.0  # veri yetersiz -> notr
+
+
+def test_daily_trend_filter(tmp_path, monkeypatch):
+    from bot import trader as trader_mod
+    from bot.strategies import BuyHold
+    from bot.trader import Trader, TraderConfig
+
+    monkeypatch.setattr(trader_mod, "_BASE_DIR", str(tmp_path))
+
+    class FakeEx:
+        def __init__(self, rising: bool):
+            self.rising = rising
+
+        def klines(self, symbol, interval, limit):
+            base = list(range(1, 302)) if self.rising else list(range(301, 0, -1))
+            return [data.Candle(ts=i, open=v, high=v, low=v, close=float(v), volume=1)
+                    for i, v in enumerate(base)]
+
+    cfg = TraderConfig(symbol="TESTUSDT", interval="1h", mode="paper", mtf_daily=True)
+    up = Trader(BuyHold(), cfg, FakeEx(rising=True))
+    assert up._daily_trend_ok() is True
+    down = Trader(BuyHold(), TraderConfig(symbol="T2USDT", interval="1h",
+                                          mode="paper", mtf_daily=True), FakeEx(rising=False))
+    assert down._daily_trend_ok() is False
+    # gunluk periyotta veya filtre kapaliyken hep serbest
+    off = Trader(BuyHold(), TraderConfig(symbol="T3USDT", interval="1h",
+                                         mode="paper", mtf_daily=False), FakeEx(rising=False))
+    assert off._daily_trend_ok() is True

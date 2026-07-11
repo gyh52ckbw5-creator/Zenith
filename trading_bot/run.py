@@ -283,6 +283,7 @@ def cmd_trade(args: argparse.Namespace) -> None:
                 start_equity=args.equity / len(symbols),  # paper: sanal bakiye esit bolunur
                 risk=risk,
                 news_filter=args.news_filter,
+                mtf_daily=args.daily_trend,
             ),
             ex,
         )
@@ -597,6 +598,8 @@ def main() -> None:
                     help="live mod onayi: gercek para kaybedebilecegimi anladim")
     tr.add_argument("--news-filter", action=argparse.BooleanOptionalAction, default=True,
                     help="Buyuk haber saatlerinde yeni giris yapma (kapatmak: --no-news-filter)")
+    tr.add_argument("--daily-trend", action=argparse.BooleanOptionalAction, default=True,
+                    help="Gunluk SMA200 altindayken long acma (kapatmak: --no-daily-trend)")
 
     wf = sub.add_parser("walkforward", help="Stratejiyi ardisik zaman dilimlerinde dogrula")
     common(wf)
