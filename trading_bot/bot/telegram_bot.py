@@ -35,6 +35,7 @@ HELP_TEXT = (
     "/durum - sanal portfoy ozeti\n"
     "/fiyat SEMBOL - guncel fiyat (ör. /fiyat XAUUSD)\n"
     "/analiz - hizli piyasa taramasi (biraz surer)\n"
+    "/derin SEMBOL - tek sembol derin analiz (rejim, trend, momentum, seviyeler)\n"
     "/rapor - son kapanan islemler\n"
     "/yardim - bu liste\n"
     "(Egitim amaclidir; islem acma/kapama komutu bilerek yoktur.)"
@@ -80,6 +81,8 @@ class TelegramCommander:
                 return self._fiyat(parts[1].upper())
             if cmd == "analiz":
                 return self._analiz()
+            if cmd == "derin":
+                return self._derin(parts[1].upper() if len(parts) > 1 else "XAUUSD")
             if cmd == "rapor":
                 return self._rapor()
         except Exception as exc:  # noqa: BLE001 - hata da cevap olarak gitsin
@@ -126,6 +129,15 @@ class TelegramCommander:
             f"Aday: {pick.symbol} + {pick.strategy}" if pick else "Elemeyi gecen aday yok."
         )
         return "\n".join(lines)
+
+    def _derin(self, symbol: str) -> str:
+        from .analyst import full_report  # tembel: agir modul, ihtiyacta yuklensin
+
+        if symbol.endswith("USDT"):
+            candles = self.ex.klines(symbol, "1d", 1000)
+        else:
+            candles = fetch_yahoo(yahoo_symbol(symbol), "1d", 1000)
+        return full_report(symbol, candles)
 
     def _rapor(self) -> str:
         rows: list[str] = []

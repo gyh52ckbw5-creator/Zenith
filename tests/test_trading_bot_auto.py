@@ -510,3 +510,26 @@ def test_news_blackout_window():
                          events=[{"ts": now, "country": "JPY", "title": "BoJ"}])[0] is False
     # bos takvim -> serbest (fail-open)
     assert news_blackout("BTCUSDT", now=now, events=[])[0] is False
+
+
+def test_adx_bounds_and_warmup():
+    from bot.indicators import adx
+
+    candles = data.synthetic(n=300, seed=17)
+    values = adx([c.high for c in candles], [c.low for c in candles],
+                 [c.close for c in candles], 14)
+    assert values[:28] == [None] * 28  # 2*period isinma
+    computed = [v for v in values if v is not None]
+    assert computed and all(0 <= v <= 100 for v in computed)
+
+
+def test_full_report_sections():
+    from bot.analyst import full_report
+
+    candles = data.synthetic(n=800, seed=18)
+    report = full_report("TESTUSDT", candles)
+    for needle in ("Rejim", "Trend", "Momentum", "Oynaklik", "Seviyeler",
+                   "Getiri", "Strateji", "GENEL", "Egitim amaclidir"):
+        assert needle in report, needle
+    # kisa veri durustce reddedilir
+    assert "en az 260 mum" in full_report("X", candles[:100])

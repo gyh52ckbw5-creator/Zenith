@@ -71,6 +71,9 @@ TOOLS = {
                  "Arguman: 'SEMBOL strateji periyot'."),
     "portfoy": (_threaded(trading_tools.portfolio_text),
                 "Calisan trading botunun sanal portfoy durumu. Arguman: bos."),
+    "derin": (_threaded(trading_tools.deep_report_text),
+              "Tek sembol DERIN analiz: rejim (ADX), trend, momentum, oynaklik, "
+              "destek/direnc, strateji onerisi. Arguman: 'SEMBOL [periyot]' (ör. 'XAUUSD 1d')."),
 }
 
 

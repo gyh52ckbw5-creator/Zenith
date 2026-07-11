@@ -407,6 +407,15 @@ def cmd_optimize(args: argparse.Namespace) -> None:
     print("Yine de bu secim GECMISE gore yapildi - canli oncesi taze veride dogrula.")
 
 
+def cmd_derin(args: argparse.Namespace) -> None:
+    """Tek sembol icin cok faktorlu derin analiz raporu."""
+    from bot.analyst import full_report
+
+    print(UYARI)
+    fetch = smart_fetch(args.interval, args.bars)
+    print(full_report(args.symbol.upper(), fetch(args.symbol.upper())))
+
+
 def cmd_analyze(args: argparse.Namespace) -> None:
     """Surekli analiz modu: bot bosta dururken bile duzenli araliklarla
     tum piyasalari tarar, en iyi adaylari raporlar, Telegram'a gonderir."""
@@ -584,7 +593,12 @@ def main() -> None:
     rp = sub.add_parser("report", help="Sanal portfoy durum raporu")
     rp.add_argument("--html", action="store_true", help="Portfoy tarihcesi HTML grafigi uret")
     sub.add_parser("notify-test", help="Telegram baglantisini kur ve test mesaji at")
-    sub.add_parser("telegram", help="Telegram komut servisi: /durum /fiyat /analiz /rapor")
+    dr = sub.add_parser("derin", help="Tek sembol derin analiz: rejim, trend, momentum, seviyeler")
+    dr.add_argument("--symbol", default="XAUUSD")
+    dr.add_argument("--interval", default="1d")
+    dr.add_argument("--bars", type=int, default=1000)
+
+    sub.add_parser("telegram", help="Telegram komut servisi: /durum /fiyat /analiz /rapor /derin")
 
     args = p.parse_args()
     if args.cmd == "backtest":
@@ -605,6 +619,8 @@ def main() -> None:
         cmd_report(args)
     elif args.cmd == "notify-test":
         cmd_notify_test(args)
+    elif args.cmd == "derin":
+        cmd_derin(args)
     elif args.cmd == "telegram":
         from bot.telegram_bot import TelegramCommander
 

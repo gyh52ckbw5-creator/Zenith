@@ -99,6 +99,16 @@ def optimize_text(arg: str) -> str:
     )
 
 
+def deep_report_text(arg: str) -> str:
+    """Tek sembol cok faktorlu derin analiz (rejim, trend, momentum, seviyeler)."""
+    symbol, _, interval = _parse(arg)
+    if _TB not in sys.path:
+        sys.path.insert(0, _TB)
+    from bot.analyst import full_report  # noqa: PLC0415
+
+    return full_report(symbol, _candles(symbol, interval))
+
+
 def portfolio_text(arg: str = "") -> str:
     """Calisan botun sanal portfoy durumu (trader_state_*.json)."""
     files = sorted(glob.glob(os.path.join(_TB, "trader_state_*.json")))

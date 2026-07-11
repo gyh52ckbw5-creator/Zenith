@@ -116,6 +116,53 @@ def atr(
     return out
 
 
+def adx(
+    highs: list[float], lows: list[float], closes: list[float], period: int = 14
+) -> list[float | None]:
+    """Ortalama Yon Endeksi (ADX, Wilder): trendin GUCUNU olcer (yonunu degil).
+
+    Kaba okuma: >25 guclu trend, 20-25 zayif trend, <20 yatay piyasa.
+    Trend takip stratejileri yatayda testere olur; ADX bunu onceden soyler.
+    """
+    n = len(closes)
+    out: list[float | None] = [None] * n
+    if n <= 2 * period:
+        return out
+    plus_dm, minus_dm, trs = [0.0], [0.0], [highs[0] - lows[0]]
+    for i in range(1, n):
+        up = highs[i] - highs[i - 1]
+        down = lows[i - 1] - lows[i]
+        plus_dm.append(up if up > down and up > 0 else 0.0)
+        minus_dm.append(down if down > up and down > 0 else 0.0)
+        trs.append(
+            max(highs[i] - lows[i], abs(highs[i] - closes[i - 1]), abs(lows[i] - closes[i - 1]))
+        )
+    # Wilder yumusatmasi
+    atr_s = sum(trs[1 : period + 1])
+    pdm_s = sum(plus_dm[1 : period + 1])
+    mdm_s = sum(minus_dm[1 : period + 1])
+    dxs: list[float] = []
+    adx_val: float | None = None
+    for i in range(period + 1, n):
+        atr_s = atr_s - atr_s / period + trs[i]
+        pdm_s = pdm_s - pdm_s / period + plus_dm[i]
+        mdm_s = mdm_s - mdm_s / period + minus_dm[i]
+        if atr_s <= 0:
+            continue
+        plus_di = 100.0 * pdm_s / atr_s
+        minus_di = 100.0 * mdm_s / atr_s
+        denom = plus_di + minus_di
+        dx = 100.0 * abs(plus_di - minus_di) / denom if denom > 0 else 0.0
+        dxs.append(dx)
+        if len(dxs) == period:
+            adx_val = sum(dxs) / period
+            out[i] = adx_val
+        elif len(dxs) > period and adx_val is not None:
+            adx_val = (adx_val * (period - 1) + dx) / period
+            out[i] = adx_val
+    return out
+
+
 def _rsi_value(avg_gain: float, avg_loss: float) -> float:
     if avg_loss == 0:
         return 100.0
