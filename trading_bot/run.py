@@ -427,6 +427,25 @@ def cmd_optimize(args: argparse.Namespace) -> None:
     print("Yine de bu secim GECMISE gore yapildi - canli oncesi taze veride dogrula.")
 
 
+def cmd_montecarlo(args: argparse.Namespace) -> None:
+    """Backtest calistirir, sonra islemleri Monte Carlo ile sansa karsi sinar."""
+    from bot.montecarlo import monte_carlo
+
+    print(UYARI)
+    candles = get_candles(args)
+    strategy = build_strategy(args)
+    result = run_bt(args, candles, strategy)
+    print(f"Veri: {args.source}, {len(candles)} mum")
+    print(result.summary())
+    pnls = [t.pnl_pct for t in result.trades]
+    mc = monte_carlo(pnls, trials=args.trials, ruin_pct=args.ruin_pct)
+    print()
+    if mc is None:
+        print(f"Monte Carlo icin en az 10 islem gerekir ({len(pnls)} var).")
+    else:
+        print(mc.summary())
+
+
 def cmd_derin(args: argparse.Namespace) -> None:
     """Tek sembol icin cok faktorlu derin analiz raporu."""
     from bot.analyst import full_report
@@ -639,6 +658,17 @@ def main() -> None:
     rp = sub.add_parser("report", help="Sanal portfoy durum raporu")
     rp.add_argument("--html", action="store_true", help="Portfoy tarihcesi HTML grafigi uret")
     sub.add_parser("notify-test", help="Telegram baglantisini kur ve test mesaji at")
+    mc = sub.add_parser("montecarlo", help="Backtest + Monte Carlo: sonuc ne kadar sansa bagliydi?")
+    common(mc)
+    mc.add_argument("--source", choices=["synthetic", "csv", "binance", "yahoo"], default="binance")
+    mc.add_argument("--csv", help="CSV dosya yolu (--source csv icin)")
+    mc.add_argument("--seed", type=int, default=42)
+    mc.add_argument("--commission", type=float, default=0.1)
+    mc.add_argument("--slippage", type=float, default=0.05)
+    mc.add_argument("--trials", type=int, default=2000, help="Simulasyon sayisi")
+    mc.add_argument("--ruin-pct", type=float, default=50.0, help="Iflas esigi (%% kayip)")
+    risk_sim_flags(mc)
+
     dr = sub.add_parser("derin", help="Tek sembol derin analiz: rejim, trend, momentum, seviyeler")
     dr.add_argument("--symbol", default="XAUUSD")
     dr.add_argument("--interval", default="1d")
@@ -665,6 +695,8 @@ def main() -> None:
         cmd_report(args)
     elif args.cmd == "notify-test":
         cmd_notify_test(args)
+    elif args.cmd == "montecarlo":
+        cmd_montecarlo(args)
     elif args.cmd == "derin":
         cmd_derin(args)
     elif args.cmd == "telegram":

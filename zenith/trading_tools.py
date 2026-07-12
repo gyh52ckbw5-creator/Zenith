@@ -109,6 +109,24 @@ def deep_report_text(arg: str) -> str:
     return full_report(symbol, _candles(symbol, interval))
 
 
+def montecarlo_text(arg: str) -> str:
+    """Backtest + Monte Carlo: sonuc ne kadar sansa bagliydi?"""
+    symbol, strat_name, interval = _parse(arg)
+    _, _, backtest, _, _, STRATEGIES = _bot()
+    if _TB not in sys.path:
+        sys.path.insert(0, _TB)
+    from bot.montecarlo import monte_carlo  # noqa: PLC0415
+
+    candles = _candles(symbol, interval)
+    res = backtest.run_backtest(candles, STRATEGIES[strat_name](),
+                                stop_loss_pct=3.0, take_profit_pct=9.0, cooldown_bars=5)
+    mc = monte_carlo([t.pnl_pct for t in res.trades], trials=2000)
+    head = f"{symbol} {interval} ({res.strategy}): gecmis getiri {res.total_return_pct:+.1f}%\n"
+    if mc is None:
+        return head + f"Monte Carlo icin en az 10 islem gerekir ({res.n_trades} var). {DISCLAIMER}"
+    return head + mc.summary() + f"\n{DISCLAIMER}"
+
+
 def portfolio_text(arg: str = "") -> str:
     """Calisan botun sanal portfoy durumu (trader_state_*.json)."""
     files = sorted(glob.glob(os.path.join(_TB, "trader_state_*.json")))

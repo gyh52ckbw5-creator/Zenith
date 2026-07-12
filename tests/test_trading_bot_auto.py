@@ -598,3 +598,39 @@ def test_daily_trend_filter(tmp_path, monkeypatch):
     off = Trader(BuyHold(), TraderConfig(symbol="T3USDT", interval="1h",
                                          mode="paper", mtf_daily=False), FakeEx(rising=False))
     assert off._daily_trend_ok() is True
+
+
+def test_sortino_and_calmar():
+    from bot.backtest import run_backtest
+    from bot.strategies import SmaCross
+
+    candles = data.synthetic(n=800, seed=20)
+    res = run_backtest(candles, SmaCross(10, 30))
+    # Calmar = toplam getiri / maks dusus (isaret ve buyukluk tutmali)
+    if res.max_drawdown_pct > 0:
+        assert abs(res.calmar - res.total_return_pct / res.max_drawdown_pct) < 1e-9
+    assert isinstance(res.sortino, float)
+    assert "Sortino" in res.summary() and "Calmar" in res.summary()
+
+
+def test_monte_carlo_determinism_and_bounds():
+    from bot.montecarlo import monte_carlo
+
+    # net pozitif kenarli islem serisi
+    trades = [5.0, -2.0, 3.0, -1.0, 4.0, -2.5, 6.0, -1.5, 2.0, -1.0, 3.5, -2.0]
+    a = monte_carlo(trades, trials=500, seed=7)
+    b = monte_carlo(trades, trials=500, seed=7)
+    assert a is not None and a.summary() == b.summary()  # ayni seed = ayni sonuc
+    assert a.return_p5 <= a.return_p50 <= a.return_p95   # yuzdelikler sirali
+    assert 0.0 <= a.ruin_prob <= 1.0
+    assert a.maxdd_p50 <= a.maxdd_p95
+
+    assert monte_carlo([1.0, -1.0], trials=100) is None   # <10 islem -> None
+
+
+def test_monte_carlo_all_losses_high_ruin():
+    from bot.montecarlo import monte_carlo
+
+    losers = [-8.0] * 12
+    mc = monte_carlo(losers, trials=300, seed=1, ruin_pct=50.0)
+    assert mc is not None and mc.return_p50 < 0 and mc.ruin_prob > 0.9

@@ -36,6 +36,7 @@ HELP_TEXT = (
     "/fiyat SEMBOL - guncel fiyat (ör. /fiyat XAUUSD)\n"
     "/analiz - hizli piyasa taramasi (biraz surer)\n"
     "/derin SEMBOL - tek sembol derin analiz (rejim, trend, momentum, seviyeler)\n"
+    "/montecarlo SEMBOL - sonuc ne kadar sansa bagli? (binlerce simulasyon)\n"
     "/rapor - son kapanan islemler\n"
     "/yardim - bu liste\n"
     "(Egitim amaclidir; islem acma/kapama komutu bilerek yoktur.)"
@@ -83,6 +84,8 @@ class TelegramCommander:
                 return self._analiz()
             if cmd == "derin":
                 return self._derin(parts[1].upper() if len(parts) > 1 else "XAUUSD")
+            if cmd == "montecarlo":
+                return self._montecarlo(parts[1].upper() if len(parts) > 1 else "XAUUSD")
             if cmd == "rapor":
                 return self._rapor()
         except Exception as exc:  # noqa: BLE001 - hata da cevap olarak gitsin
@@ -138,6 +141,21 @@ class TelegramCommander:
         else:
             candles = fetch_yahoo(yahoo_symbol(symbol), "1d", 1000)
         return full_report(symbol, candles)
+
+    def _montecarlo(self, symbol: str) -> str:
+        from .montecarlo import monte_carlo  # tembel yukleme
+
+        if symbol.endswith("USDT"):
+            candles = self.ex.klines(symbol, "1d", 1000)
+        else:
+            candles = fetch_yahoo(yahoo_symbol(symbol), "1d", 1000)
+        from .backtest import run_backtest
+        from .strategies import SmaCross
+
+        res = run_backtest(candles, SmaCross(), stop_loss_pct=3.0, take_profit_pct=9.0, cooldown_bars=5)
+        mc = monte_carlo([t.pnl_pct for t in res.trades], trials=2000)
+        head = f"{symbol} gecmis getiri {res.total_return_pct:+.1f}% ({res.n_trades} islem)\n"
+        return head + (mc.summary() if mc else "Monte Carlo icin en az 10 islem gerekir.")
 
     def _rapor(self) -> str:
         rows: list[str] = []

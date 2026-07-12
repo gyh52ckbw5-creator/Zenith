@@ -74,6 +74,10 @@ TOOLS = {
     "derin": (_threaded(trading_tools.deep_report_text),
               "Tek sembol DERIN analiz: rejim (ADX), trend, momentum, oynaklik, "
               "destek/direnc, strateji onerisi. Arguman: 'SEMBOL [periyot]' (ör. 'XAUUSD 1d')."),
+    "montecarlo": (_threaded(trading_tools.montecarlo_text),
+                   "Backtest sonucunun ne kadar SANSA bagli oldugunu binlerce simulasyonla "
+                   "olcer (getiri araligi, kotu-sans drawdown, iflas olasiligi). "
+                   "Arguman: 'SEMBOL strateji periyot'."),
 }
 
 

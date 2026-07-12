@@ -75,7 +75,41 @@ class Result:
             return 0.0
         return mean / std * math.sqrt(len(rets))
 
+    def _bar_returns(self) -> list[float]:
+        return [
+            self.equity_curve[i] / self.equity_curve[i - 1] - 1
+            for i in range(1, len(self.equity_curve))
+            if self.equity_curve[i - 1]
+        ]
+
+    @property
+    def sortino(self) -> float:
+        """Sortino: Sharpe gibi ama SADECE asagi yonlu oynakligi cezalandirir.
+        Yukari sicramalari 'risk' saymaz - daha adil bir risk-getiri olcusu."""
+        rets = self._bar_returns()
+        if len(rets) < 2:
+            return 0.0
+        mean = sum(rets) / len(rets)
+        downside = [r for r in rets if r < 0]
+        if not downside:
+            return float("inf") if mean > 0 else 0.0
+        dd = math.sqrt(sum(r * r for r in downside) / len(downside))
+        if dd == 0:
+            return 0.0
+        return mean / dd * math.sqrt(len(rets))
+
+    @property
+    def calmar(self) -> float:
+        """Calmar: toplam getiri / maksimum dusus. Kazanci CANINI ne kadar
+        yakarak elde ettigini soyler; >1 saglikli kabul edilir."""
+        if self.max_drawdown_pct <= 0:
+            return float("inf") if self.total_return_pct > 0 else 0.0
+        return self.total_return_pct / self.max_drawdown_pct
+
     def summary(self) -> str:
+        def fmt(x: float) -> str:
+            return "sonsuz" if x == float("inf") else f"{x:.2f}"
+
         lines = [
             f"Strateji            : {self.strategy}",
             f"Baslangic bakiyesi  : {self.start_equity:,.2f}",
@@ -86,7 +120,9 @@ class Result:
             f"Islem sayisi        : {self.n_trades}",
             f"Kazanma orani       : {self.win_rate_pct:.1f}%",
             f"Kar faktoru         : {self.profit_factor:.2f}",
-            f"Sharpe (kaba)       : {self.sharpe:.2f}",
+            f"Sharpe (kaba)       : {fmt(self.sharpe)}",
+            f"Sortino             : {fmt(self.sortino)}",
+            f"Calmar (getiri/DD)  : {fmt(self.calmar)}",
         ]
         return "\n".join(lines)
 
