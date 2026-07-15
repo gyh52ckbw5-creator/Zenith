@@ -518,6 +518,17 @@ def cmd_analyze(args: argparse.Namespace) -> None:
         time.sleep(args.every_hours * 3600)
 
 
+def cmd_stats(args: argparse.Namespace) -> None:
+    """Gercek islem gunlugu (trades_*.csv) performans karnesi."""
+    from bot import stats
+
+    text = stats.summary_text()
+    print(text)
+    if args.notify:
+        send_telegram(text[:4000])
+        print("\n(Telegram'a gonderildi.)")
+
+
 def cmd_notify_test(args: argparse.Namespace) -> None:
     """Telegram baglantisini kurar/dogrular: chat ID bulur, test mesaji atar."""
     token = os.environ.get("TELEGRAM_BOT_TOKEN", "")
@@ -657,6 +668,9 @@ def main() -> None:
 
     rp = sub.add_parser("report", help="Sanal portfoy durum raporu")
     rp.add_argument("--html", action="store_true", help="Portfoy tarihcesi HTML grafigi uret")
+
+    st = sub.add_parser("stats", help="Gercek islem karnesi (trades_*.csv analizi)")
+    st.add_argument("--notify", action="store_true", help="Ozeti Telegram'a da gonder")
     sub.add_parser("notify-test", help="Telegram baglantisini kur ve test mesaji at")
     mc = sub.add_parser("montecarlo", help="Backtest + Monte Carlo: sonuc ne kadar sansa bagliydi?")
     common(mc)
@@ -693,6 +707,8 @@ def main() -> None:
         cmd_optimize(args)
     elif args.cmd == "report":
         cmd_report(args)
+    elif args.cmd == "stats":
+        cmd_stats(args)
     elif args.cmd == "notify-test":
         cmd_notify_test(args)
     elif args.cmd == "montecarlo":

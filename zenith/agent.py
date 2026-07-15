@@ -78,6 +78,8 @@ TOOLS = {
                    "Backtest sonucunun ne kadar SANSA bagli oldugunu binlerce simulasyonla "
                    "olcer (getiri araligi, kotu-sans drawdown, iflas olasiligi). "
                    "Arguman: 'SEMBOL strateji periyot'."),
+    "karne": (_threaded(trading_tools.stats_text),
+              "Botun gercek islem karnesi: kazanma orani, beklenti, kar faktoru. Arguman: bos."),
 }
 
 

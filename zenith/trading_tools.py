@@ -127,6 +127,15 @@ def montecarlo_text(arg: str) -> str:
     return head + mc.summary() + f"\n{DISCLAIMER}"
 
 
+def stats_text(arg: str = "") -> str:
+    """Gercek islem karnesi: kapanmis islemlerden kazanma orani, beklenti, kar faktoru."""
+    if _TB not in sys.path:
+        sys.path.insert(0, _TB)
+    from bot import stats  # noqa: PLC0415
+
+    return stats.summary_text(_TB)
+
+
 def portfolio_text(arg: str = "") -> str:
     """Calisan botun sanal portfoy durumu (trader_state_*.json)."""
     files = sorted(glob.glob(os.path.join(_TB, "trader_state_*.json")))
