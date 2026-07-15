@@ -88,6 +88,14 @@ yalnızca masaüstü terminalde koşar. iPhone'la bu iş üç parçayla kurulur:
 Codespaces/Termius'tan `scan --symbols FOREX`, `walkforward`, `optimize` —
 hepsi bu depoda hazır (bkz. bölüm 3).
 
+**Alternatif — Python köprüsü (aynı stratejinin canlı MT5 hali)**
+Windows'ta `pip install MetaTrader5` → MT5 demo hesabı aç → `.env`'e
+`MT5_LOGIN / MT5_PASSWORD / MT5_SERVER` yaz → `python mt5/mt5_bridge.py
+--symbol EURUSD --interval M15`. Köprü bizim stratejiyle demo emri gönderir,
+Telegram'a haber verir; telefondaki MT5 uygulamasına aynı demo hesabıyla
+girince işlemleri canlı görürsün. Güvenlik: köprü varsayılan olarak SADECE
+demo hesapta çalışır (canlı için bilerek `--allow-live` gerekir).
+
 **Adım 3 — EA'yı 7/24 çalıştırmak: Windows VPS + iPhone'dan uzak masaüstü**
 1. Windows VPS kirala (~10-15$/ay: Contabo, Kamatera vb. "Windows VPS").
 2. App Store → **Windows App** (Microsoft'un resmî RDP istemcisi, bedava)
