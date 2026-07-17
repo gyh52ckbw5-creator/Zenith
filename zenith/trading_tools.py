@@ -127,6 +127,16 @@ def montecarlo_text(arg: str) -> str:
     return head + mc.summary() + f"\n{DISCLAIMER}"
 
 
+def patterns_text(arg: str) -> str:
+    """Mum formasyonu taramasi: yutan, harami, cekic, yildiz, delen, askerler."""
+    symbol, _, interval = _parse(arg)
+    if _TB not in sys.path:
+        sys.path.insert(0, _TB)
+    from bot.patterns import pattern_report  # noqa: PLC0415
+
+    return pattern_report(_candles(symbol, interval, 100), symbol) + f"\n{DISCLAIMER}"
+
+
 def stats_text(arg: str = "") -> str:
     """Gercek islem karnesi: kapanmis islemlerden kazanma orani, beklenti, kar faktoru."""
     if _TB not in sys.path:

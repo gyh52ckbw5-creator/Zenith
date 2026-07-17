@@ -80,6 +80,9 @@ TOOLS = {
                    "Arguman: 'SEMBOL strateji periyot'."),
     "karne": (_threaded(trading_tools.stats_text),
               "Botun gercek islem karnesi: kazanma orani, beklenti, kar faktoru. Arguman: bos."),
+    "formasyon": (_threaded(trading_tools.patterns_text),
+                  "Mum formasyonu taramasi (yutan, harami, cekic, yildiz, delen, askerler). "
+                  "Arguman: 'SEMBOL [periyot]' (ör. 'XAUUSD 1d')."),
 }
 
 
