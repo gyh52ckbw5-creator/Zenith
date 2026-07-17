@@ -75,11 +75,19 @@ def main() -> None:
     login = os.environ.get("MT5_LOGIN")
     password = os.environ.get("MT5_PASSWORD")
     server = os.environ.get("MT5_SERVER")
-    if not (login and password and server):
-        sys.exit("MT5_LOGIN / MT5_PASSWORD / MT5_SERVER .env'de tanimli olmali (DEMO hesap).")
 
-    if not mt5.initialize(login=int(login), password=password, server=server):
-        sys.exit(f"MT5 baglantisi basarisiz: {mt5.last_error()}")
+    # Once ACIK terminale baglan: MT5 zaten demo hesaba girmisse sifre gerekmez.
+    ok = mt5.initialize()
+    # Terminal kapali ya da baska hesaptaysa, .env kimlik bilgileriyle dene.
+    if (not ok or mt5.account_info() is None) and login and password and server:
+        ok = mt5.initialize(login=int(login), password=password, server=server)
+    if not ok or mt5.account_info() is None:
+        sys.exit(
+            f"MT5 baglantisi basarisiz: {mt5.last_error()}\n"
+            "Cozum: MT5 uygulamasi ACIK ve demo hesaba GIRIS YAPMIS olsun "
+            "(ust barda hesap numaran gorunur), sonra tekrar calistir.\n"
+            "Alternatif: .env'e dogru MT5_LOGIN / MT5_PASSWORD / MT5_SERVER yaz."
+        )
 
     info = mt5.account_info()
     is_demo = info is not None and info.trade_mode == mt5.ACCOUNT_TRADE_MODE_DEMO
