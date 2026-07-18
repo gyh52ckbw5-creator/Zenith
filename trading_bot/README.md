@@ -11,7 +11,7 @@
 
 | Komut | Ne yapar |
 |---|---|
-| `backtest` | Stratejiyi geçmiş veride test eder (komisyon/kayma + isteğe bağlı stop simülasyonu) |
+| `backtest` | Stratejiyi geçmiş veride test eder (komisyon/kayma + canlıyla aynı risk bazlı pozisyon boyutu) |
 | `chart` | Backtest + equity eğrisi grafikli HTML rapor |
 | `scan` | 13 strateji kombinasyonunu tarar, overfit'i işaretler |
 | `walkforward` | Ardışık dönem doğrulaması (profesyonel standart) |
@@ -111,7 +111,13 @@ python run.py trade --mode paper --strategy sma --symbol BTCUSDT --interval 1h
 Her turda: sinyal üretir → stop-loss/take-profit kontrol eder → pozisyonu
 risk kuralına göre boyutlandırır (varsayılan: işlem başına sermayenin %1'i
 riskte, tek pozisyon en çok %25, günlük zarar %5'i aşarsa o gün durur) →
-emri uygular ve `trader_state.json`'a kaydeder.
+emri uygular ve durum dosyasına kaydeder.
+
+Strateji sinyali yalnızca kapanmış mumdan üretilir; açık pozisyonun yazılımsal
+stopu ve günlük zarar freni varsayılan olarak her 60 saniyede kontrol edilir
+(`--poll-seconds`). Borsa cevabındaki gerçek ortalama dolum fiyatı kaydedilir.
+`paper`, `testnet` ve `live` durumları ayrı dosyalardadır; sanal pozisyon canlı
+pozisyon olarak yüklenmez.
 
 `live` için: Binance'te API anahtarını **sadece spot trade izniyle** oluştur
 (para çekme iznini asla açma), `BINANCE_API_KEY` / `BINANCE_API_SECRET`
@@ -151,6 +157,16 @@ girdiğinde telefonuna mesaj gelir.
 cd trading_bot
 python run.py backtest --strategy sma --source synthetic
 python run.py backtest --strategy rsi --source synthetic --seed 7
+```
+
+Backtest, chart, scan, walk-forward, optimize ve Monte Carlo varsayılan olarak
+canlı botla aynı `%1` işlem riski, `%2` stop, `%4` hedef ve `%25` tek-pozisyon
+tavanını kullanır. Böylece geçmiş testte tüm sermayeyle girip canlıda küçük
+pozisyon açan iki farklı sistem karşılaştırılmaz. Örnek daha temkinli ayar:
+
+```bash
+python run.py backtest --strategy sma --source synthetic \
+  --risk-pct 0.5 --stop-loss 2 --take-profit 4 --max-position 20
 ```
 
 ### Gerçek veriyle backtest (Binance halka açık verisi, hesap gerekmez)

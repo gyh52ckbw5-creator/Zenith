@@ -159,14 +159,17 @@ def portfolio_text(arg: str = "") -> str:
                 st = json.load(f)
         except (OSError, json.JSONDecodeError):
             continue
-        symbol = os.path.basename(path).replace("trader_state_", "").replace(".json", "")
+        fallback = os.path.basename(path).replace("trader_state_", "").replace(".json", "")
+        symbol = st.get("symbol", fallback)
+        mode = st.get("mode", "paper")
+        label = f"{symbol}[{mode}]"
         hist = st.get("equity_history", [])
         equity = hist[-1][1] if hist else st.get("cash", 0.0)
         total += equity
         pos = "pozisyonda" if st.get("qty", 0) > 0 else "nakitte"
         start = hist[0][1] if hist else equity
         change = 100.0 * (equity / start - 1) if start else 0.0
-        lines.append(f"  {symbol}: {equity:,.2f} ({pos}, degisim {change:+.2f}%)")
+        lines.append(f"  {label}: {equity:,.2f} ({pos}, degisim {change:+.2f}%)")
     last_log = ""
     try:
         with open(files[-1], encoding="utf-8") as f:

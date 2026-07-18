@@ -18,7 +18,7 @@ import time
 from dataclasses import dataclass
 
 from .data import Candle
-from .exchange import BinanceSpot, ExchangeError
+from .exchange import BinanceSpot, ExchangeError, average_fill_price
 from .indicators import atr, sma
 from .news import news_blackout
 from .notify import send_telegram
@@ -30,8 +30,16 @@ _BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 INTERVAL_SEC = {"1m": 60, "5m": 300, "15m": 900, "30m": 1800, "1h": 3600, "4h": 14400, "1d": 86400}
 
 
-def state_path(symbol: str) -> str:
-    return os.path.join(_BASE_DIR, f"trader_state_{symbol.upper()}.json")
+def state_path(symbol: str, mode: str = "paper") -> str:
+    """Modlari ayri dosyalarda tutar; paper eski dosya adini korur.
+
+    Ayni sembolun sanal adedini canli/testnet pozisyonu sanmak gercek emir
+    riski yaratir. Bu nedenle testnet ve live durumlari kesin olarak ayrilir.
+    """
+    if mode not in {"paper", "testnet", "live"}:
+        raise ValueError(f"gecersiz trader modu: {mode}")
+    suffix = "" if mode == "paper" else f"_{mode}"
+    return os.path.join(_BASE_DIR, f"trader_state_{symbol.upper()}{suffix}.json")
 
 
 @dataclass
@@ -43,6 +51,8 @@ class TraderConfig:
     risk: RiskConfig | None = None
     news_filter: bool = True  # buyuk haber saatlerinde yeni giris yapma
     mtf_daily: bool = True    # coklu zaman dilimi onayi: gunluk SMA200 altinda long yok
+    fail_closed: bool | None = None  # None: testnet/live kapali kalir, paper devam eder
+    poll_seconds: int = 60     # yazilimsal stop/risk kontrol araligi
 
 
 class Trader:
@@ -51,8 +61,11 @@ class Trader:
         self.cfg = cfg
         self.risk = cfg.risk or RiskConfig()
         self.risk.validate()
+        if not (5 <= cfg.poll_seconds <= 300):
+            raise ValueError("poll_seconds 5-300 araliginda olmali")
+        self.fail_closed = cfg.mode != "paper" if cfg.fail_closed is None else cfg.fail_closed
         self.ex = exchange
-        self.state_file = state_path(cfg.symbol)
+        self.state_file = state_path(cfg.symbol, cfg.mode)
         self.state = self._load_state()
         self._daily_cache: tuple[str, bool] | None = None  # (gun, trend_uygun_mu)
 
@@ -60,8 +73,18 @@ class Trader:
     def _load_state(self) -> dict:
         if os.path.exists(self.state_file):
             with open(self.state_file, encoding="utf-8") as f:
-                return json.load(f)
+                state = json.load(f)
+            stored_mode = state.get("mode", self.cfg.mode)
+            if stored_mode != self.cfg.mode:
+                raise ValueError(
+                    f"durum modu uyusmuyor: dosya={stored_mode}, istenen={self.cfg.mode}"
+                )
+            state.setdefault("symbol", self.cfg.symbol.upper())
+            state.setdefault("mode", self.cfg.mode)
+            return state
         return {
+            "symbol": self.cfg.symbol.upper(),
+            "mode": self.cfg.mode,
             "cash": self.cfg.start_equity,  # paper mod sanal bakiyesi
             "qty": 0.0,
             "entry_price": 0.0,
@@ -72,8 +95,12 @@ class Trader:
         }
 
     def _save_state(self) -> None:
-        with open(self.state_file, "w", encoding="utf-8") as f:
+        tmp = self.state_file + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
             json.dump(self.state, f, indent=2)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, self.state_file)
 
     def _log(self, msg: str, equity: float, notify: bool = False) -> None:
         now = time.strftime("%Y-%m-%d %H:%M:%S")
@@ -103,6 +130,9 @@ class Trader:
         else:
             order = self.ex.market_buy_quote(self.cfg.symbol, quote_amount)
             qty = float(order.get("executedQty", 0))
+            if qty <= 0:
+                raise ExchangeError(f"{self.cfg.symbol}: alim emri dolmadi")
+            price = average_fill_price(order, price)
             self.state["qty"] += qty
         self.state["entry_price"] = price
         self.state["peak_price"] = price
@@ -111,7 +141,11 @@ class Trader:
             a = atr([c.high for c in closed], [c.low for c in closed], [c.close for c in closed])
             if a[-1] is not None:
                 self.state["stop_price"] = price - self.risk.atr_stop_mult * a[-1]
+        # Emir basarili olduktan sonra uzak servis/bildirim hatasi olsa bile
+        # yerel pozisyon kaydi kaybolmasin.
+        self._save_state()
         self._log(f"ALIM {quote_amount:.2f} karsiligi @ {price}", self.equity(price), notify=True)
+        self._save_state()
 
     def _sell_all(self, price: float, reason: str) -> None:
         qty = self.state["qty"]
@@ -120,15 +154,21 @@ class Trader:
         if self.cfg.mode == "paper":
             self.state["cash"] += qty * price
         else:
-            self.ex.market_sell_qty(self.cfg.symbol, qty)
+            order = self.ex.market_sell_qty(self.cfg.symbol, qty)
+            executed = float(order.get("executedQty", 0))
+            if executed <= 0:
+                raise ExchangeError(f"{self.cfg.symbol}: satis emri dolmadi")
+            price = average_fill_price(order, price)
         self.state["qty"] = 0.0
         entry = self.state["entry_price"]
         pnl = 100.0 * (price / entry - 1) if entry else 0.0
         self.state["entry_price"] = 0.0
         self.state["peak_price"] = 0.0
         self.state["stop_price"] = 0.0
+        self._save_state()
         self._append_trade_csv(entry, price, pnl, reason)
         self._log(f"SATIS ({reason}) @ {price}, islem k/z: {pnl:+.2f}%", self.equity(price), notify=True)
+        self._save_state()
 
     def _append_trade_csv(self, entry: float, exit_: float, pnl: float, reason: str) -> None:
         """Kapanan her islemi CSV'ye ekler: Excel/Sheets'te analiz icin."""
@@ -201,7 +241,10 @@ class Trader:
                 self._log("cooldown: stop sonrasi bekleme suresi, giris yok", equity)
                 return
             if self.cfg.news_filter:
-                blocked, event = news_blackout(self.cfg.symbol)
+                blocked, event = news_blackout(
+                    self.cfg.symbol,
+                    fail_closed=self.fail_closed,
+                )
                 if blocked:
                     self._log(f"haber karantinasi ({event}), giris yok", equity)
                     return
@@ -223,7 +266,8 @@ class Trader:
         alt zaman dilimi dalgadir - nehre karsi yuzulmez.
 
         Gunde bir kez hesaplanir (onbellek); veri yetersizse veya gunluk
-        periyotta calisiliyorsa filtre devre disi (fail-open).
+        periyotta calisiliyorsa filtre devre disi. Veri hatasinda paper mod
+        fail-open, testnet/live mod fail-closed calisir.
         """
         if not self.cfg.mtf_daily or self.cfg.interval == "1d":
             return True
@@ -234,9 +278,9 @@ class Trader:
             daily = self.ex.klines(self.cfg.symbol, "1d", 260)[:-1]  # kapanmis gunler
             closes = [c.close for c in daily]
             s200 = sma(closes, 200)[-1] if len(closes) >= 200 else None
-            ok = True if s200 is None else closes[-1] > s200
-        except Exception:  # noqa: BLE001 - veri sorunu botu durdurmasin
-            ok = True
+            ok = (not self.fail_closed) if s200 is None else closes[-1] > s200
+        except Exception:  # noqa: BLE001
+            ok = not self.fail_closed
         self._daily_cache = (today, ok)
         return ok
 
@@ -272,7 +316,9 @@ def run_many(traders: list["Trader"]) -> None:
     """Birden fazla sembolu ayni dongude izler. Ctrl+C ile durdurulur."""
     if not traders:
         return
-    sleep_s = min(INTERVAL_SEC.get(t.cfg.interval, 3600) for t in traders)
+    # Sinyal kapanmis mumdan gelir; fakat yazilimsal stop ve gunluk fren
+    # mum suresi boyunca uyuyamaz. En gec poll_seconds araliginda kontrol et.
+    sleep_s = min(t.cfg.poll_seconds for t in traders)
     first = traders[0]
     print(
         f"Bot basladi: {', '.join(t.cfg.symbol for t in traders)} "

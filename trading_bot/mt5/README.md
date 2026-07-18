@@ -43,9 +43,59 @@ ve lot büyüklüğünü "işlem başına bakiyenin %1'i riskte" kuralıyla hesa
 | TrailingStopPoints | 0 | İz süren stop (0 = kapalı); SL'i sadece lehine taşır |
 | MaxDailyLossPercent | 5.0 | Günlük zarar freni: aşılırsa o gün işlem yok |
 | CooldownBars | 3 | Pozisyon kapandıktan sonra N mum yeni giriş yok |
+| MaxSpreadPoints | 50 | Spread bu sınırı aşarsa yeni pozisyon açılmaz |
+| AllowLiveAccount | false | Canlı hesapta kazara çalışmayı engeller |
+| LiveAccountLogin | 0 | Canlıda izin verilen tam MT5 hesap numarası |
+| MaxMarginPercent | 20 | Tek emrin kullanabileceği azami equity/marjin oranı |
+| AllowWeekendEntry | false | Cuma geç saat/hafta sonu yeni giriş kilidi |
+| FridayCutoffHourUTC | 18 | Cuma yeni girişlerin kesildiği UTC saati |
 | MagicNumber | 20260708 | EA'nın kendi işlemlerini tanıma imzası |
 
 Forex'e özel notlar ve Türkiye'deki yasal çerçeve için: [../FOREX.md](../FOREX.md)
+
+## Python MT5 köprüsü güvenlik kontrolleri
+
+`mt5_bridge.py`, açık Windows MT5 terminaline bağlanan alternatif demo ve
+canlı çalıştırıcısıdır. Varsayılan hesap modu `demo`dur. Her yeni emirden önce:
+
+- yalnızca yeni kapanmış mumda bir kez karar verir;
+- kotasyonun son 30 saniye içinde geldiğini doğrular;
+- spread 50 broker puanını aşarsa alım yapmaz;
+- Cuma UTC 18:00 sonrası ve hafta sonu yeni pozisyon açmaz;
+- broker stop mesafesini, gerekli marjini ve `order_check` sonucunu doğrular;
+- lotu her turda yenilenen güncel hesap equity'sinden hesaplar;
+- günlük equity kaybı varsayılan `%3` sınırına gelince kendi pozisyonunu
+  kapatır ve günün kalanında yeni emir açmaz.
+
+Koruma durumu `.mt5_bridge_state_<SEMBOL>_<MAGIC>.json` dosyasına atomik
+olarak yazılır; program yeniden başlasa da aynı mumda tekrar emir vermez ve
+günlük fren unutulmaz.
+
+Örnek demo çalıştırması:
+
+```bash
+python mt5/mt5_bridge.py --symbol EURUSD --interval M15 \
+  --risk-pct 0.5 --max-daily-loss 2 --max-spread-points 30
+```
+
+Canlı hesap iki aşamalı çalıştırılır. Önce yalnızca teknik ve hesap
+kontrollerini yapan, **emir döngüsünü başlatmayan** preflight:
+
+```bash
+python mt5/mt5_bridge.py --symbol EURUSD --interval M15 \
+  --account-mode live --allow-live --live-account 12345678 \
+  --live-ack CANLI_RISKI_KABUL --preflight-only
+```
+
+`PREFLIGHT OK` görmeden canlı çalıştırma yapma. Sonraki komutta yalnızca
+`--preflight-only` kaldırılır. Hesap numarası açık MT5 hesabıyla birebir
+eşleşmezse veya açık onay metni eksikse program kapanır. EA kullanılacaksa
+aynı koruma için `AllowLiveAccount=true` ve `LiveAccountLogin` alanına tam
+hesap numarası birlikte girilir.
+
+Altın ve bazı broker sembollerinde puan ölçeği farklıdır. Demo günlüğünde
+normal spread'i gözlemleyip `--max-spread-points` değerini sembole göre ayarla;
+korumayı kaldırmak yerine gerçekçi bir üst sınır kullan.
 
 ## Uyarılar
 

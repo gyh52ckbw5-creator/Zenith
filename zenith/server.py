@@ -193,9 +193,12 @@ def _trading_states() -> dict[str, dict]:
     """trading_bot/trader_state_*.json dosyalarini okur (bot kuruluysa)."""
     states: dict[str, dict] = {}
     for path in sorted(TRADING_DIR.glob("trader_state_*.json")):
-        symbol = path.stem.replace("trader_state_", "")
         try:
-            states[symbol] = json.loads(path.read_text(encoding="utf-8"))
+            state = json.loads(path.read_text(encoding="utf-8"))
+            fallback = path.stem.replace("trader_state_", "")
+            symbol = state.get("symbol", fallback)
+            mode = state.get("mode", "paper")
+            states[f"{symbol}[{mode}]"] = state
         except (OSError, json.JSONDecodeError):
             continue  # bozuk/yarim dosya sayfayi dusurmesin
     return states
@@ -212,7 +215,8 @@ async def trading_status() -> dict:
         total += last_equity
         symbols.append(
             {
-                "symbol": symbol,
+                "symbol": st.get("symbol", symbol.split("[", 1)[0]),
+                "mode": st.get("mode", "paper"),
                 "cash": st.get("cash", 0.0),
                 "qty": st.get("qty", 0.0),
                 "entry_price": st.get("entry_price", 0.0),

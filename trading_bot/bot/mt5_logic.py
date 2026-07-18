@@ -8,6 +8,7 @@ burada test edilir. Boylece kopru koduna guvenmeden once beyni dogrulanmis olur.
 from __future__ import annotations
 
 import math
+import time
 
 from .data import Candle
 from .risk import RiskConfig
@@ -45,7 +46,16 @@ def lot_from_risk(
 ) -> float:
     """EA'daki LotsByRisk ile ayni matematik: stop yerse kayip = equity*risk%.
     Lot, borsanin volume_step'ine ASAGI yuvarlanir; sinirlar uygulanir."""
-    if equity <= 0 or tick_value <= 0 or tick_size <= 0:
+    if (
+        equity <= 0
+        or stop_points <= 0
+        or point <= 0
+        or tick_value <= 0
+        or tick_size <= 0
+        or volume_min < 0
+        or volume_max <= 0
+        or risk_pct <= 0
+    ):
         return 0.0
     risk_money = equity * risk_pct / 100.0
     loss_per_lot = stop_points * point / tick_size * tick_value
@@ -76,6 +86,76 @@ def decide(candles: list[Candle], in_position: bool, strategy) -> str:
 def sl_tp_prices(entry: float, cfg: RiskConfig, point: float,
                  stop_points: int, tp_points: int) -> tuple[float, float]:
     """Long pozisyon icin (stop_loss, take_profit) fiyatlari."""
+    cfg.validate()
+    if entry <= 0 or point <= 0 or stop_points <= 0 or tp_points <= 0:
+        raise ValueError("entry, point, stop_points ve tp_points pozitif olmali")
     sl = entry - stop_points * point
     tp = entry + tp_points * point
     return sl, tp
+
+
+def spread_points(bid: float, ask: float, point: float) -> float:
+    """Bid/ask farkini broker puani cinsinden dondurur.
+
+    Gecersiz veya ters kotasyon guvenli tarafta kalmak icin sonsuz spread
+    sayilir ve yeni emir engellenir.
+    """
+    if bid <= 0 or ask <= 0 or point <= 0 or ask < bid:
+        return float("inf")
+    return (ask - bid) / point
+
+
+def tick_is_fresh(tick_time: float, *, now: float | None = None,
+                  max_age_seconds: float = 30.0) -> bool:
+    """Kotasyon yeni mi? Piyasa kapaliyken kalan eski tick ile emir verme."""
+    if tick_time <= 0 or max_age_seconds <= 0:
+        return False
+    current = time.time() if now is None else now
+    age = current - tick_time
+    # Makine/broker saati arasindaki kucuk ileri farklarini tolere et.
+    return -5.0 <= age <= max_age_seconds
+
+
+def daily_loss_pct(day_start_equity: float, current_equity: float) -> float:
+    """Gun basina gore yuzdesel dusus; gecersiz degerde sonsuz risk."""
+    if day_start_equity <= 0 or current_equity < 0:
+        return float("inf")
+    return max(0.0, 100.0 * (1.0 - current_equity / day_start_equity))
+
+
+def daily_loss_exceeded(day_start_equity: float, current_equity: float,
+                        max_daily_loss_pct: float) -> bool:
+    """Gunluk zarar esigi asildi mi? Esik pozitif olmak zorundadir."""
+    if max_daily_loss_pct <= 0:
+        raise ValueError("max_daily_loss_pct pozitif olmali")
+    return daily_loss_pct(day_start_equity, current_equity) >= max_daily_loss_pct
+
+
+def latest_closed_bar_ts(candles: list[Candle]) -> int:
+    """Olusan son mumu atlayip en yeni kapanmis mumun zamanini dondurur."""
+    return candles[-2].ts if len(candles) >= 2 else 0
+
+
+def broker_stops_valid(entry: float, sl: float, tp: float, point: float,
+                       stops_level_points: int) -> bool:
+    """SL/TP brokerin minimum mesafe kuralini karsiliyor mu?"""
+    if entry <= 0 or point <= 0 or not (sl < entry < tp):
+        return False
+    minimum = max(0, stops_level_points) * point
+    return (entry - sl) + 1e-12 >= minimum and (tp - entry) + 1e-12 >= minimum
+
+
+def margin_within_limit(required_margin: float, equity: float,
+                        max_margin_pct: float) -> bool:
+    """Tek yeni pozisyonun baglayabilecegi azami equity yuzdesi."""
+    if required_margin < 0 or equity <= 0 or not (0 < max_margin_pct <= 100):
+        return False
+    return required_margin <= equity * max_margin_pct / 100.0
+
+
+def weekend_entry_blocked(timestamp: float, friday_cutoff_utc: int = 18) -> bool:
+    """Cuma kapanisina yakin ve hafta sonu yeni pozisyon acma."""
+    if not (0 <= friday_cutoff_utc <= 23):
+        raise ValueError("friday_cutoff_utc 0-23 araliginda olmali")
+    t = time.gmtime(timestamp)
+    return t.tm_wday >= 5 or (t.tm_wday == 4 and t.tm_hour >= friday_cutoff_utc)

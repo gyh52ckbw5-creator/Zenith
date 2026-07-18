@@ -32,8 +32,14 @@ class RiskConfig:
             raise ValueError("risk_pct_per_trade 0-5 araliginda olmali (5 bile agresif)")
         if self.stop_loss_pct <= 0 or self.take_profit_pct <= 0:
             raise ValueError("stop_loss_pct ve take_profit_pct pozitif olmali")
-        if self.max_position_pct > 100:
-            raise ValueError("max_position_pct 100'u asamaz")
+        if not (0 < self.max_position_pct <= 100):
+            raise ValueError("max_position_pct 0-100 araliginda olmali")
+        if not (0 < self.max_daily_loss_pct <= 20):
+            raise ValueError("max_daily_loss_pct 0-20 araliginda olmali")
+        if self.trailing_stop_pct < 0 or self.atr_stop_mult < 0:
+            raise ValueError("trailing_stop_pct ve atr_stop_mult negatif olamaz")
+        if self.cooldown_bars < 0 or self.stoploss_guard < 0:
+            raise ValueError("cooldown_bars ve stoploss_guard negatif olamaz")
 
 
 def position_size_quote(equity: float, cfg: RiskConfig) -> float:

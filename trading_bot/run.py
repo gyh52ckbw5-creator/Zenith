@@ -137,6 +137,8 @@ def run_bt(args: argparse.Namespace, candles, strategy):
         take_profit_pct=args.take_profit,
         trailing_stop_pct=args.trailing_stop,
         cooldown_bars=args.cooldown,
+        risk_pct_per_trade=args.risk_pct,
+        max_position_pct=args.max_position,
     )
 
 
@@ -215,7 +217,16 @@ def cmd_scan(args: argparse.Namespace) -> None:
 
     print(f"Taraniyor: {', '.join(symbols)} ({args.source}, {args.interval}, {args.bars} mum)")
     print("Veri %70 egitim / %30 dogrulama olarak bolundu.\n")
-    results = scanner.scan(symbols, fetch)
+    results = scanner.scan(
+        symbols,
+        fetch,
+        stop_loss_pct=args.stop_loss,
+        take_profit_pct=args.take_profit,
+        trailing_stop_pct=args.trailing_stop,
+        cooldown_bars=args.cooldown,
+        risk_pct_per_trade=args.risk_pct,
+        max_position_pct=args.max_position,
+    )
     for r in results:
         print(r.row())
 
@@ -284,6 +295,7 @@ def cmd_trade(args: argparse.Namespace) -> None:
                 risk=risk,
                 news_filter=args.news_filter,
                 mtf_daily=args.daily_trend,
+                poll_seconds=args.poll_seconds,
             ),
             ex,
         )
@@ -301,6 +313,7 @@ def cmd_walkforward(args: argparse.Namespace) -> None:
         candles, strategy, segments=args.segments,
         stop_loss_pct=args.stop_loss, take_profit_pct=args.take_profit,
         trailing_stop_pct=args.trailing_stop, cooldown_bars=args.cooldown,
+        risk_pct_per_trade=args.risk_pct, max_position_pct=args.max_position,
     )
     print(f"Strateji: {strategy.name}, veri: {args.source} ({len(candles)} mum), "
           f"{args.segments} dilim\n")
@@ -336,7 +349,10 @@ def cmd_report(args: argparse.Namespace) -> None:
     for path in files:
         with open(path, encoding="utf-8") as f:
             st = json.load(f)
-        symbol = os.path.basename(path).replace("trader_state_", "").replace(".json", "")
+        fallback = os.path.basename(path).replace("trader_state_", "").replace(".json", "")
+        symbol = st.get("symbol", fallback)
+        mode = st.get("mode", "paper")
+        label = f"{symbol}[{mode}]"
         qty = st.get("qty", 0.0)
         value = 0.0
         pos = "nakitte"
@@ -351,11 +367,11 @@ def cmd_report(args: argparse.Namespace) -> None:
                 pos = "long (fiyat alinamadi)"
         equity = st.get("cash", 0.0) + value
         total += equity
-        print(f"{symbol:<10} {st.get('cash', 0.0):>10.2f} {qty:>12.6f} {value:>10.2f} {pos}")
+        print(f"{label:<18} {st.get('cash', 0.0):>10.2f} {qty:>12.6f} {value:>10.2f} {pos}")
         buys = sum(1 for line in st.get("log", []) if "ALIM" in line)
         sells = sum(1 for line in st.get("log", []) if "SATIS" in line)
         print(f"{'':<10} islem gecmisi: {buys} alim, {sells} satis")
-        histories[symbol] = st.get("equity_history", [])
+        histories[label] = st.get("equity_history", [])
     print(f"\nToplam portfoy degeri: {total:.2f}")
 
     # istatistik kosesi: kapanan islemlerden beklenti/Kelly/iflas olasiligi
@@ -418,6 +434,7 @@ def cmd_optimize(args: argparse.Namespace) -> None:
         trials=args.trials, segments=args.segments, seed=args.seed,
         stop_loss_pct=args.stop_loss, take_profit_pct=args.take_profit,
         trailing_stop_pct=args.trailing_stop, cooldown_bars=args.cooldown,
+        risk_pct_per_trade=args.risk_pct, max_position_pct=args.max_position,
     )
     print(f"{args.strategy} icin {len(results)} kombinasyon denendi "
           f"({args.source}, {len(candles)} mum, {args.segments} dilim). En iyi 10:\n")
@@ -585,10 +602,14 @@ def main() -> None:
 
     def risk_sim_flags(sp: argparse.ArgumentParser) -> None:
         """backtest/chart icin mum ici risk simulasyonu bayraklari (0 = kapali)."""
-        sp.add_argument("--stop-loss", type=float, default=0.0, help="%% stop-loss simulasyonu")
-        sp.add_argument("--take-profit", type=float, default=0.0, help="%% kar-al simulasyonu")
+        sp.add_argument("--stop-loss", type=float, default=2.0, help="%% stop-loss simulasyonu")
+        sp.add_argument("--take-profit", type=float, default=4.0, help="%% kar-al simulasyonu")
         sp.add_argument("--trailing-stop", type=float, default=0.0, help="%% iz suren stop")
         sp.add_argument("--cooldown", type=int, default=0, help="Stop sonrasi mum bekleme")
+        sp.add_argument("--risk-pct", type=float, default=1.0,
+                        help="Islem basina riske edilen sermaye %%")
+        sp.add_argument("--max-position", type=float, default=25.0,
+                        help="Tek pozisyon icin sermaye tavani %%")
 
     bt = sub.add_parser("backtest", help="Stratejiyi gecmis veride test et")
     common(bt)
@@ -607,6 +628,7 @@ def main() -> None:
     sc.add_argument("--interval", default="4h")
     sc.add_argument("--bars", type=int, default=1000)
     sc.add_argument("--source", choices=["binance", "synthetic"], default="binance")
+    risk_sim_flags(sc)
 
     tr = sub.add_parser("trade", help="Otomatik islem dongusu (paper/testnet/live)")
     common(tr)
@@ -630,6 +652,8 @@ def main() -> None:
                     help="Buyuk haber saatlerinde yeni giris yapma (kapatmak: --no-news-filter)")
     tr.add_argument("--daily-trend", action=argparse.BooleanOptionalAction, default=True,
                     help="Gunluk SMA200 altindayken long acma (kapatmak: --no-daily-trend)")
+    tr.add_argument("--poll-seconds", type=int, default=60,
+                    help="Stop/risk kontrol araligi saniye (5-300)")
 
     wf = sub.add_parser("walkforward", help="Stratejiyi ardisik zaman dilimlerinde dogrula")
     common(wf)
