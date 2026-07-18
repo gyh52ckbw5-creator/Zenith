@@ -242,7 +242,34 @@ def test_trade_csv_written(tmp_path, monkeypatch):
     assert csv_path.exists()
     lines = csv_path.read_text().strip().splitlines()
     assert lines[0].startswith("zaman,")
-    assert ",100.0,110.0,10.0000,test" in lines[1]
+    assert ",100.0,110.0,10.0000,10.000000,test" in lines[1]
+
+
+def test_trade_csv_migrates_legacy_schema_fail_closed(tmp_path, monkeypatch):
+    import csv
+
+    from bot import trader as trader_mod
+    from bot.exchange import BinanceSpot
+    from bot.strategies import BuyHold
+    from bot.trader import Trader, TraderConfig
+
+    monkeypatch.setattr(trader_mod, "_BASE_DIR", str(tmp_path))
+    path = tmp_path / "trades_TESTUSDT.csv"
+    path.write_text(
+        "zaman,mod,sembol,giris,cikis,kz_yuzde,neden\n"
+        "2026-01-01 00:00:00,paper,TESTUSDT,100,110,10,test\n",
+        encoding="utf-8",
+    )
+    trader = Trader(
+        BuyHold(),
+        TraderConfig(symbol="TESTUSDT", mode="paper", start_equity=1000.0),
+        BinanceSpot(testnet=False),
+    )
+    trader._append_trade_csv(100, 105, 5, 1.25, "test2")
+    with path.open(newline="", encoding="utf-8") as f:
+        rows = list(csv.DictReader(f))
+    assert rows[0]["hesap_kz_yuzde"] == ""  # eski veri kaldiraci bilmiyor
+    assert rows[1]["hesap_kz_yuzde"] == "1.250000"
 
 
 def test_yahoo_symbol_mapping():

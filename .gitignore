@@ -13,3 +13,5 @@ trading_bot/trades_*.csv
 trading_bot/report_*.html
 trading_bot/mt5/.mt5_bridge_state_*.json
 trading_bot/mt5/.mt5_bridge_state_*.json.tmp
+trading_bot/mt5/trades_mt5_*.csv
+/work/

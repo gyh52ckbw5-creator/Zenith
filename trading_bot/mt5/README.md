@@ -71,6 +71,14 @@ Koruma durumu `.mt5_bridge_state_<SEMBOL>_<MAGIC>.json` dosyasına atomik
 olarak yazılır; program yeniden başlasa da aynı mumda tekrar emir vermez ve
 günlük fren unutulmaz.
 
+Kapanan MT5 işlemleri `trades_mt5_<SEMBOL>_<MAGIC>.csv` günlüğüne yazılır.
+Günlük yazılamazsa köprü yeni alımları engeller; eksik performans verisiyle
+canlıya hazır görünmez. Demo koşusu yeterince biriktiğinde:
+
+```bash
+python run.py readiness --mode demo --html
+```
+
 Örnek demo çalıştırması:
 
 ```bash

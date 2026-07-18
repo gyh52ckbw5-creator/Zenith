@@ -27,6 +27,7 @@ kontrol her zaman hesap sahibinde kalmalidir.
 from __future__ import annotations
 
 import argparse
+import csv
 import json
 import os
 import sys
@@ -206,6 +207,10 @@ def main() -> None:
         os.path.dirname(os.path.abspath(__file__)),
         f".mt5_bridge_state_{sym}_{args.magic}.json",
     )
+    journal_file = os.path.join(
+        os.path.dirname(os.path.abspath(__file__)),
+        f"trades_mt5_{sym}_{args.magic}.csv",
+    )
 
     def load_safety_state() -> dict:
         if not os.path.exists(state_file):
@@ -239,6 +244,40 @@ def main() -> None:
             return mt5.ORDER_FILLING_FOK
         return mt5.ORDER_FILLING_RETURN
 
+    def append_closed_trade(pos, exit_price: float, reason: str) -> None:
+        """Readiness kapisi icin kapanan MT5 long islemini kalici gunluge yaz."""
+        entry = float(pos.price_open)
+        pnl = 100.0 * (exit_price / entry - 1.0) if entry > 0 else 0.0
+        entry_equity = float(safety.get("position_entry_equity", 0.0))
+        account_pnl = (
+            100.0 * float(pos.profit) / entry_equity
+            if entry_equity > 0 else None
+        )
+        new_file = not os.path.exists(journal_file)
+        with open(journal_file, "a", newline="", encoding="utf-8") as f:
+            writer = csv.writer(f)
+            if new_file:
+                writer.writerow(
+                    ["zaman", "mod", "sembol", "giris", "cikis", "kz_yuzde",
+                     "hesap_kz_yuzde", "neden", "miktar", "kimlik"]
+                )
+            writer.writerow(
+                [
+                    time.strftime("%Y-%m-%d %H:%M:%S"),
+                    "demo" if is_demo else "live",
+                    sym,
+                    entry,
+                    exit_price,
+                    f"{pnl:.6f}",
+                    "" if account_pnl is None else f"{account_pnl:.6f}",
+                    reason,
+                    float(pos.volume),
+                    int(pos.ticket),
+                ]
+            )
+            f.flush()
+            os.fsync(f.fileno())
+
     def my_position():
         for pos in mt5.positions_get(symbol=sym) or []:
             if pos.magic == args.magic:
@@ -255,6 +294,21 @@ def main() -> None:
         }
         res = mt5.order_send(req)
         ok = bool(res and res.retcode == mt5.TRADE_RETCODE_DONE)
+        if ok:
+            try:
+                append_closed_trade(pos, float(tick.bid), reason)
+                safety.pop("position_entry_equity", None)
+                safety.pop("journal_error", None)
+                save_safety_state(safety)
+            except OSError as exc:
+                safety["journal_error"] = str(exc)
+                save_safety_state(safety)
+                warning = (
+                    f"GUVENLIK: pozisyon kapandi ama MT5 gunlugu yazilamadi: {exc}. "
+                    "Yeni alimlar engellendi."
+                )
+                print(warning)
+                send_telegram(warning)
         msg = (
             f"SATIS {sym} @ {tick.bid} ({reason})"
             if ok else f"Satis reddedildi ({reason}): {getattr(res, 'comment', res)}"
@@ -285,6 +339,8 @@ def main() -> None:
                     "day_start_equity": float(current_info.equity),
                     "halted_day": "",
                     "last_closed_bar_ts": safety.get("last_closed_bar_ts", 0),
+                    "journal_error": safety.get("journal_error", ""),
+                    "position_entry_equity": safety.get("position_entry_equity", 0.0),
                 }
                 save_safety_state(safety)
 
@@ -316,6 +372,13 @@ def main() -> None:
                 save_safety_state(safety)
 
             if action == "buy":
+                if safety.get("journal_error"):
+                    print(
+                        f"[{time.strftime('%H:%M')}] MT5 gunluk hatasi duzeltilmeden "
+                        "yeni alim yok"
+                    )
+                    time.sleep(sleep_s)
+                    continue
                 if safety.get("halted_day") == today:
                     print(f"[{time.strftime('%H:%M')}] {sym} gunluk fren aktif, alim yok")
                     time.sleep(sleep_s)
@@ -392,6 +455,9 @@ def main() -> None:
                         time.sleep(sleep_s)
                         continue
                     res = mt5.order_send(req)
+                    if res and res.retcode == mt5.TRADE_RETCODE_DONE:
+                        safety["position_entry_equity"] = float(current_info.equity)
+                        save_safety_state(safety)
                     msg = (f"ALIM {sym} {lots} lot @ {tick.ask}"
                            if res and res.retcode == mt5.TRADE_RETCODE_DONE
                            else f"Alim reddedildi: {getattr(res, 'comment', res)}")

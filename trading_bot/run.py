@@ -10,6 +10,7 @@ Komutlar (ayrintili kurulum sirasi icin: KURULUM.md):
   analyze      Surekli analiz: duzenli tarar, Telegram'a rapor atar
   trade        Otomatik islem dongusu: paper / testnet / live (risk yonetimli)
   report       Sanal portfoy durumu (--html ile grafik)
+  readiness    Demo/testnet gunlugunden canliya hazirlik kapisi + grafik
   notify-test  Telegram baglantisini kur ve test et
 
 Ornekler:
@@ -546,6 +547,34 @@ def cmd_stats(args: argparse.Namespace) -> None:
         print("\n(Telegram'a gonderildi.)")
 
 
+def cmd_readiness(args: argparse.Namespace) -> None:
+    """Demo/testnet gunlugunu asgari canliya gecis esiklerine karsi denetler."""
+    from bot.readiness import Thresholds, evaluate, render_html
+
+    base = os.path.dirname(os.path.abspath(__file__))
+    limits = Thresholds(
+        min_trades=args.min_trades,
+        min_days=args.min_days,
+        min_profit_factor=args.min_profit_factor,
+        min_expectancy_pct=args.min_expectancy,
+        max_drawdown_pct=args.max_drawdown,
+        recent_trades=args.recent_trades,
+    )
+    report = evaluate(base, args.mode, limits)
+    text = report.summary()
+    print(text)
+    if args.html:
+        out = args.out or os.path.join(base, "report_readiness.html")
+        with open(out, "w", encoding="utf-8") as f:
+            f.write(render_html(report))
+        print(f"\nHTML hazirlik raporu yazildi: {out}")
+    if args.notify:
+        send_telegram(text[:4000])
+        print("\n(Telegram'a gonderildi.)")
+    if args.require_pass and not report.ready:
+        raise SystemExit(2)
+
+
 def cmd_notify_test(args: argparse.Namespace) -> None:
     """Telegram baglantisini kurar/dogrular: chat ID bulur, test mesaji atar."""
     token = os.environ.get("TELEGRAM_BOT_TOKEN", "")
@@ -695,6 +724,20 @@ def main() -> None:
 
     st = sub.add_parser("stats", help="Gercek islem karnesi (trades_*.csv analizi)")
     st.add_argument("--notify", action="store_true", help="Ozeti Telegram'a da gonder")
+    rd = sub.add_parser("readiness", help="Demo/testnet verisinden canliya hazirlik kapisi")
+    rd.add_argument("--mode", choices=["validation", "paper", "testnet", "demo", "live", "all"],
+                    default="validation", help="Dahil edilecek islem modu")
+    rd.add_argument("--min-trades", type=int, default=100)
+    rd.add_argument("--min-days", type=int, default=60)
+    rd.add_argument("--min-profit-factor", type=float, default=1.20)
+    rd.add_argument("--min-expectancy", type=float, default=0.0)
+    rd.add_argument("--max-drawdown", type=float, default=10.0)
+    rd.add_argument("--recent-trades", type=int, default=30)
+    rd.add_argument("--html", action="store_true", help="Equity/drawdown HTML grafigi uret")
+    rd.add_argument("--out", help="HTML cikti yolu")
+    rd.add_argument("--notify", action="store_true", help="Ozeti Telegram'a da gonder")
+    rd.add_argument("--require-pass", action="store_true",
+                    help="Kapidan kalirsa otomasyon icin cikis kodu 2 dondur")
     sub.add_parser("notify-test", help="Telegram baglantisini kur ve test mesaji at")
     mc = sub.add_parser("montecarlo", help="Backtest + Monte Carlo: sonuc ne kadar sansa bagliydi?")
     common(mc)
@@ -733,6 +776,8 @@ def main() -> None:
         cmd_report(args)
     elif args.cmd == "stats":
         cmd_stats(args)
+    elif args.cmd == "readiness":
+        cmd_readiness(args)
     elif args.cmd == "notify-test":
         cmd_notify_test(args)
     elif args.cmd == "montecarlo":

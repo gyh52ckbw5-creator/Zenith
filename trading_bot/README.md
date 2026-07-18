@@ -19,6 +19,7 @@
 | `analyze` | Sürekli analiz + Telegram raporu (bot boştayken bile) |
 | `trade` | Otomatik işlem: paper → testnet → live, tam risk yönetimli |
 | `report` | Portföy durumu (`--html` ile grafik) |
+| `readiness` | Demo/testnet günlüğünden canlıya hazırlık kapısı ve HTML grafik |
 | `notify-test` | Telegram kurulumu ve testi |
 
 ## 1. TikTok / Instagram'da gördüklerin hakkında acı gerçek
@@ -189,6 +190,25 @@ sadece "şu an alırdım/satardım" kararları ve sanal bakiye izlenir.
 ```bash
 pytest tests/test_trading_bot.py -v
 ```
+
+### Canlıya hazırlık kapısı
+
+Demo/paper/testnet işlemleri yeterince biriktiğinde örnek sayısı, takvim süresi,
+kâr faktörü, işlem başına beklenti, maksimum düşüş, yakın dönem performansı ve
+bozuk satır kontrolünü tek komutta çalıştır:
+
+```bash
+python run.py readiness --html
+```
+
+Varsayılan kapı en az 100 kapanmış işlem, 60 takvim günü, 1.20 kâr faktörü,
+pozitif beklenti, en fazla `%10` drawdown ve son 30 işlemde pozitif beklenti
+ister. Her koşul geçse bile sonuç kâr garantisi değildir. Otomasyonda kapı
+başarısızsa çıkış kodu `2` almak için `--require-pass` ekle.
+
+Kapı `hesap_kz_yuzde` alanını kullanır; yalnızca enstrüman fiyat getirisini
+içeren eski günlükler kaldıraç/pozisyon büyüklüğünü bilmediği için güvenli
+tarafta kalıp veri kalitesi kontrolünden geçmez.
 
 ## 4. Kendi gözünle görmen gereken dersler
 

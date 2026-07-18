@@ -12,6 +12,7 @@ kaldigi yerden devam eder.
 
 from __future__ import annotations
 
+import csv
 import json
 import os
 import time
@@ -81,6 +82,7 @@ class Trader:
                 )
             state.setdefault("symbol", self.cfg.symbol.upper())
             state.setdefault("mode", self.cfg.mode)
+            state.setdefault("entry_equity", 0.0)
             return state
         return {
             "symbol": self.cfg.symbol.upper(),
@@ -88,6 +90,7 @@ class Trader:
             "cash": self.cfg.start_equity,  # paper mod sanal bakiyesi
             "qty": 0.0,
             "entry_price": 0.0,
+            "entry_equity": 0.0,
             "day": "",
             "day_start_equity": 0.0,
             "halted_day": "",
@@ -123,6 +126,7 @@ class Trader:
         if quote_amount < 10:  # Binance minimum emir buyuklugu civari
             self._log(f"pozisyon cok kucuk ({quote_amount:.2f}), islem yok", self.equity(price))
             return
+        entry_equity = self.equity(price)
         if self.cfg.mode == "paper":
             qty = quote_amount / price
             self.state["cash"] -= quote_amount
@@ -135,6 +139,7 @@ class Trader:
             price = average_fill_price(order, price)
             self.state["qty"] += qty
         self.state["entry_price"] = price
+        self.state["entry_equity"] = entry_equity
         self.state["peak_price"] = price
         self.state["stop_price"] = 0.0
         if self.risk.atr_stop_mult > 0:
@@ -162,25 +167,65 @@ class Trader:
         self.state["qty"] = 0.0
         entry = self.state["entry_price"]
         pnl = 100.0 * (price / entry - 1) if entry else 0.0
+        entry_equity = float(self.state.get("entry_equity", 0.0))
+        if entry_equity <= 0 and self.cfg.mode == "paper":
+            entry_equity = self.state["cash"] - qty * price + qty * entry
+        account_pnl = (
+            100.0 * qty * (price - entry) / entry_equity
+            if entry > 0 and entry_equity > 0 else None
+        )
         self.state["entry_price"] = 0.0
+        self.state["entry_equity"] = 0.0
         self.state["peak_price"] = 0.0
         self.state["stop_price"] = 0.0
         self._save_state()
-        self._append_trade_csv(entry, price, pnl, reason)
+        self._append_trade_csv(entry, price, pnl, account_pnl, reason)
         self._log(f"SATIS ({reason}) @ {price}, islem k/z: {pnl:+.2f}%", self.equity(price), notify=True)
         self._save_state()
 
-    def _append_trade_csv(self, entry: float, exit_: float, pnl: float, reason: str) -> None:
+    def _append_trade_csv(self, entry: float, exit_: float, pnl: float,
+                          account_pnl: float | None, reason: str) -> None:
         """Kapanan her islemi CSV'ye ekler: Excel/Sheets'te analiz icin."""
         path = os.path.join(_BASE_DIR, f"trades_{self.cfg.symbol}.csv")
         new_file = not os.path.exists(path)
-        with open(path, "a", encoding="utf-8") as f:
+        header = [
+            "zaman", "mod", "sembol", "giris", "cikis",
+            "kz_yuzde", "hesap_kz_yuzde", "neden",
+        ]
+        if not new_file:
+            with open(path, newline="", encoding="utf-8") as f:
+                reader = csv.DictReader(f)
+                old_fields = reader.fieldnames or []
+                old_rows = list(reader)
+            if "hesap_kz_yuzde" not in old_fields:
+                tmp = path + ".schema.tmp"
+                with open(tmp, "w", newline="", encoding="utf-8") as f:
+                    writer = csv.DictWriter(f, fieldnames=header)
+                    writer.writeheader()
+                    for row in old_rows:
+                        row["hesap_kz_yuzde"] = ""
+                        writer.writerow({key: row.get(key, "") for key in header})
+                    f.flush()
+                    os.fsync(f.fileno())
+                os.replace(tmp, path)
+        with open(path, "a", newline="", encoding="utf-8") as f:
+            writer = csv.writer(f)
             if new_file:
-                f.write("zaman,mod,sembol,giris,cikis,kz_yuzde,neden\n")
-            f.write(
-                f"{time.strftime('%Y-%m-%d %H:%M:%S')},{self.cfg.mode},{self.cfg.symbol},"
-                f"{entry},{exit_},{pnl:.4f},{reason}\n"
+                writer.writerow(header)
+            writer.writerow(
+                [
+                    time.strftime("%Y-%m-%d %H:%M:%S"),
+                    self.cfg.mode,
+                    self.cfg.symbol,
+                    entry,
+                    exit_,
+                    f"{pnl:.4f}",
+                    "" if account_pnl is None else f"{account_pnl:.6f}",
+                    reason,
+                ]
             )
+            f.flush()
+            os.fsync(f.fileno())
 
     # -- tek tur -----------------------------------------------------------
     def step(self) -> None:
