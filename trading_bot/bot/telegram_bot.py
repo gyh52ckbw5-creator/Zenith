@@ -110,12 +110,14 @@ class TelegramCommander:
                     st = json.load(f)
             except (OSError, json.JSONDecodeError):
                 continue
-            sym = os.path.basename(path).replace("trader_state_", "").replace(".json", "")
+            fallback = os.path.basename(path).replace("trader_state_", "").replace(".json", "")
+            sym = st.get("symbol", fallback)
+            mode = st.get("mode", "paper")
             hist = st.get("equity_history", [])
             eq = hist[-1][1] if hist else st.get("cash", 0.0)
             total += eq
             pos = "pozisyonda" if st.get("qty", 0) > 0 else "nakitte"
-            lines.append(f"{sym}: {eq:,.2f} ({pos})")
+            lines.append(f"{sym}[{mode}]: {eq:,.2f} ({pos})")
         return "Sanal portfoy:\n" + "\n".join(lines) + f"\nToplam: {total:,.2f}"
 
     def _analiz(self) -> str:

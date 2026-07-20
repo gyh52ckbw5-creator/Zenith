@@ -137,6 +137,8 @@ def run_backtest(
     take_profit_pct: float = 0.0,
     trailing_stop_pct: float = 0.0,
     cooldown_bars: int = 0,
+    risk_pct_per_trade: float = 0.0,
+    max_position_pct: float = 100.0,
 ) -> Result:
     """Stratejiyi calistirir. commission_pct/slippage_pct islem basina yuzdedir
     (0.1 = %0.1, tipik kripto spot komisyonu).
@@ -146,9 +148,28 @@ def run_backtest(
     hem stop hem hedef vurulursa KOTUMSER varsayim: stop once sayilir.
     cooldown_bars: stop sonrasi bu kadar mum yeni giris yapilmaz (canli
     botun cooldown korumasiyla ayni).
+
+    risk_pct_per_trade > 0 ise pozisyon boyutu canli botla ayni formulle
+    hesaplanir: equity * risk / stop mesafesi; max_position_pct tavani
+    uygulanir. Bu mod icin stop_loss_pct zorunludur. Varsayilan 0 eski
+    "tum sermayeyle gir" davranisini korur.
     """
     if len(candles) < 2:
         raise ValueError("Backtest icin en az 2 mum gerekir")
+    if start_equity <= 0:
+        raise ValueError("start_equity pozitif olmali")
+    if commission_pct < 0 or slippage_pct < 0:
+        raise ValueError("komisyon ve slippage negatif olamaz")
+    if stop_loss_pct < 0 or take_profit_pct < 0 or trailing_stop_pct < 0:
+        raise ValueError("risk yuzdeleri negatif olamaz")
+    if cooldown_bars < 0:
+        raise ValueError("cooldown_bars negatif olamaz")
+    if not (0 <= risk_pct_per_trade <= 5):
+        raise ValueError("risk_pct_per_trade 0-5 araliginda olmali")
+    if not (0 < max_position_pct <= 100):
+        raise ValueError("max_position_pct 0-100 araliginda olmali")
+    if risk_pct_per_trade > 0 and stop_loss_pct <= 0:
+        raise ValueError("risk bazli pozisyon boyutu icin stop_loss_pct gerekli")
 
     targets = strategy.target_positions(candles)
     cost = (commission_pct + slippage_pct) / 100.0
@@ -165,7 +186,7 @@ def run_backtest(
 
     def close_position(ts: int, fill: float, reason: str) -> None:
         nonlocal cash, units, open_trade
-        cash = units * fill
+        cash += units * fill
         units = 0.0
         if open_trade:
             open_trade.exit_ts = ts
@@ -181,8 +202,18 @@ def run_backtest(
         if i > 0 and targets[i - 1] != (1 if units > 0 else 0):
             if targets[i - 1] == 1 and cooldown == 0:  # al
                 fill = c.open * (1 + cost)
-                units = cash / fill
-                cash = 0.0
+                equity_before = cash
+                allocation = equity_before * max_position_pct / 100.0
+                if risk_pct_per_trade > 0:
+                    by_risk = (
+                        equity_before
+                        * (risk_pct_per_trade / 100.0)
+                        / (stop_loss_pct / 100.0)
+                    )
+                    allocation = min(allocation, by_risk)
+                allocation = min(cash, allocation)
+                units = allocation / fill
+                cash -= allocation
                 peak_price = fill
                 open_trade = Trade(entry_ts=c.ts, entry_price=fill)
             elif targets[i - 1] == 0 and units > 0:  # sat
@@ -200,13 +231,19 @@ def run_backtest(
             )
             tp = entry * (1 + take_profit_pct / 100) if take_profit_pct > 0 else 0.0
             if stop > 0 and c.low <= stop:  # kotumser: stop her seyden once
-                close_position(c.ts, stop * (1 - cost), "stop_loss")
+                # Fiyat stopun altinda acildiysa stop seviyesinden dolmak
+                # imkansizdir; hafta sonu/haber gap'inde kotu acilisi kullan.
+                raw_fill = min(c.open, stop)
+                close_position(c.ts, raw_fill * (1 - cost), "stop_loss")
                 cooldown = cooldown_bars
             elif trail > 0 and trail > stop and c.low <= trail:
-                close_position(c.ts, trail * (1 - cost), "trailing_stop")
+                raw_fill = min(c.open, trail)
+                close_position(c.ts, raw_fill * (1 - cost), "trailing_stop")
                 cooldown = cooldown_bars
             elif tp > 0 and c.high >= tp:
-                close_position(c.ts, tp * (1 - cost), "take_profit")
+                # Hedefin ustunde gap ile acilista piyasa daha iyi fiyati verir.
+                raw_fill = max(c.open, tp)
+                close_position(c.ts, raw_fill * (1 - cost), "take_profit")
 
         equity = cash + units * c.close
         equity_curve.append(equity)

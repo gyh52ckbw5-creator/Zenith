@@ -11,7 +11,7 @@
 
 | Komut | Ne yapar |
 |---|---|
-| `backtest` | Stratejiyi geçmiş veride test eder (komisyon/kayma + isteğe bağlı stop simülasyonu) |
+| `backtest` | Stratejiyi geçmiş veride test eder (komisyon/kayma + canlıyla aynı risk bazlı pozisyon boyutu) |
 | `chart` | Backtest + equity eğrisi grafikli HTML rapor |
 | `scan` | 13 strateji kombinasyonunu tarar, overfit'i işaretler |
 | `walkforward` | Ardışık dönem doğrulaması (profesyonel standart) |
@@ -19,6 +19,7 @@
 | `analyze` | Sürekli analiz + Telegram raporu (bot boştayken bile) |
 | `trade` | Otomatik işlem: paper → testnet → live, tam risk yönetimli |
 | `report` | Portföy durumu (`--html` ile grafik) |
+| `readiness` | Demo/testnet günlüğünden canlıya hazırlık kapısı ve HTML grafik |
 | `notify-test` | Telegram kurulumu ve testi |
 
 ## 1. TikTok / Instagram'da gördüklerin hakkında acı gerçek
@@ -111,7 +112,13 @@ python run.py trade --mode paper --strategy sma --symbol BTCUSDT --interval 1h
 Her turda: sinyal üretir → stop-loss/take-profit kontrol eder → pozisyonu
 risk kuralına göre boyutlandırır (varsayılan: işlem başına sermayenin %1'i
 riskte, tek pozisyon en çok %25, günlük zarar %5'i aşarsa o gün durur) →
-emri uygular ve `trader_state.json`'a kaydeder.
+emri uygular ve durum dosyasına kaydeder.
+
+Strateji sinyali yalnızca kapanmış mumdan üretilir; açık pozisyonun yazılımsal
+stopu ve günlük zarar freni varsayılan olarak her 60 saniyede kontrol edilir
+(`--poll-seconds`). Borsa cevabındaki gerçek ortalama dolum fiyatı kaydedilir.
+`paper`, `testnet` ve `live` durumları ayrı dosyalardadır; sanal pozisyon canlı
+pozisyon olarak yüklenmez.
 
 `live` için: Binance'te API anahtarını **sadece spot trade izniyle** oluştur
 (para çekme iznini asla açma), `BINANCE_API_KEY` / `BINANCE_API_SECRET`
@@ -153,6 +160,16 @@ python run.py backtest --strategy sma --source synthetic
 python run.py backtest --strategy rsi --source synthetic --seed 7
 ```
 
+Backtest, chart, scan, walk-forward, optimize ve Monte Carlo varsayılan olarak
+canlı botla aynı `%1` işlem riski, `%2` stop, `%4` hedef ve `%25` tek-pozisyon
+tavanını kullanır. Böylece geçmiş testte tüm sermayeyle girip canlıda küçük
+pozisyon açan iki farklı sistem karşılaştırılmaz. Örnek daha temkinli ayar:
+
+```bash
+python run.py backtest --strategy sma --source synthetic \
+  --risk-pct 0.5 --stop-loss 2 --take-profit 4 --max-position 20
+```
+
 ### Gerçek veriyle backtest (Binance halka açık verisi, hesap gerekmez)
 
 ```bash
@@ -173,6 +190,25 @@ sadece "şu an alırdım/satardım" kararları ve sanal bakiye izlenir.
 ```bash
 pytest tests/test_trading_bot.py -v
 ```
+
+### Canlıya hazırlık kapısı
+
+Demo/paper/testnet işlemleri yeterince biriktiğinde örnek sayısı, takvim süresi,
+kâr faktörü, işlem başına beklenti, maksimum düşüş, yakın dönem performansı ve
+bozuk satır kontrolünü tek komutta çalıştır:
+
+```bash
+python run.py readiness --html
+```
+
+Varsayılan kapı en az 100 kapanmış işlem, 60 takvim günü, 1.20 kâr faktörü,
+pozitif beklenti, en fazla `%10` drawdown ve son 30 işlemde pozitif beklenti
+ister. Her koşul geçse bile sonuç kâr garantisi değildir. Otomasyonda kapı
+başarısızsa çıkış kodu `2` almak için `--require-pass` ekle.
+
+Kapı `hesap_kz_yuzde` alanını kullanır; yalnızca enstrüman fiyat getirisini
+içeren eski günlükler kaldıraç/pozisyon büyüklüğünü bilmediği için güvenli
+tarafta kalıp veri kalitesi kontrolünden geçmez.
 
 ## 4. Kendi gözünle görmen gereken dersler
 

@@ -10,6 +10,7 @@ Komutlar (ayrintili kurulum sirasi icin: KURULUM.md):
   analyze      Surekli analiz: duzenli tarar, Telegram'a rapor atar
   trade        Otomatik islem dongusu: paper / testnet / live (risk yonetimli)
   report       Sanal portfoy durumu (--html ile grafik)
+  readiness    Demo/testnet gunlugunden canliya hazirlik kapisi + grafik
   notify-test  Telegram baglantisini kur ve test et
 
 Ornekler:
@@ -137,6 +138,8 @@ def run_bt(args: argparse.Namespace, candles, strategy):
         take_profit_pct=args.take_profit,
         trailing_stop_pct=args.trailing_stop,
         cooldown_bars=args.cooldown,
+        risk_pct_per_trade=args.risk_pct,
+        max_position_pct=args.max_position,
     )
 
 
@@ -215,7 +218,16 @@ def cmd_scan(args: argparse.Namespace) -> None:
 
     print(f"Taraniyor: {', '.join(symbols)} ({args.source}, {args.interval}, {args.bars} mum)")
     print("Veri %70 egitim / %30 dogrulama olarak bolundu.\n")
-    results = scanner.scan(symbols, fetch)
+    results = scanner.scan(
+        symbols,
+        fetch,
+        stop_loss_pct=args.stop_loss,
+        take_profit_pct=args.take_profit,
+        trailing_stop_pct=args.trailing_stop,
+        cooldown_bars=args.cooldown,
+        risk_pct_per_trade=args.risk_pct,
+        max_position_pct=args.max_position,
+    )
     for r in results:
         print(r.row())
 
@@ -284,6 +296,7 @@ def cmd_trade(args: argparse.Namespace) -> None:
                 risk=risk,
                 news_filter=args.news_filter,
                 mtf_daily=args.daily_trend,
+                poll_seconds=args.poll_seconds,
             ),
             ex,
         )
@@ -301,6 +314,7 @@ def cmd_walkforward(args: argparse.Namespace) -> None:
         candles, strategy, segments=args.segments,
         stop_loss_pct=args.stop_loss, take_profit_pct=args.take_profit,
         trailing_stop_pct=args.trailing_stop, cooldown_bars=args.cooldown,
+        risk_pct_per_trade=args.risk_pct, max_position_pct=args.max_position,
     )
     print(f"Strateji: {strategy.name}, veri: {args.source} ({len(candles)} mum), "
           f"{args.segments} dilim\n")
@@ -336,7 +350,10 @@ def cmd_report(args: argparse.Namespace) -> None:
     for path in files:
         with open(path, encoding="utf-8") as f:
             st = json.load(f)
-        symbol = os.path.basename(path).replace("trader_state_", "").replace(".json", "")
+        fallback = os.path.basename(path).replace("trader_state_", "").replace(".json", "")
+        symbol = st.get("symbol", fallback)
+        mode = st.get("mode", "paper")
+        label = f"{symbol}[{mode}]"
         qty = st.get("qty", 0.0)
         value = 0.0
         pos = "nakitte"
@@ -351,11 +368,11 @@ def cmd_report(args: argparse.Namespace) -> None:
                 pos = "long (fiyat alinamadi)"
         equity = st.get("cash", 0.0) + value
         total += equity
-        print(f"{symbol:<10} {st.get('cash', 0.0):>10.2f} {qty:>12.6f} {value:>10.2f} {pos}")
+        print(f"{label:<18} {st.get('cash', 0.0):>10.2f} {qty:>12.6f} {value:>10.2f} {pos}")
         buys = sum(1 for line in st.get("log", []) if "ALIM" in line)
         sells = sum(1 for line in st.get("log", []) if "SATIS" in line)
         print(f"{'':<10} islem gecmisi: {buys} alim, {sells} satis")
-        histories[symbol] = st.get("equity_history", [])
+        histories[label] = st.get("equity_history", [])
     print(f"\nToplam portfoy degeri: {total:.2f}")
 
     # istatistik kosesi: kapanan islemlerden beklenti/Kelly/iflas olasiligi
@@ -418,6 +435,7 @@ def cmd_optimize(args: argparse.Namespace) -> None:
         trials=args.trials, segments=args.segments, seed=args.seed,
         stop_loss_pct=args.stop_loss, take_profit_pct=args.take_profit,
         trailing_stop_pct=args.trailing_stop, cooldown_bars=args.cooldown,
+        risk_pct_per_trade=args.risk_pct, max_position_pct=args.max_position,
     )
     print(f"{args.strategy} icin {len(results)} kombinasyon denendi "
           f"({args.source}, {len(candles)} mum, {args.segments} dilim). En iyi 10:\n")
@@ -529,6 +547,34 @@ def cmd_stats(args: argparse.Namespace) -> None:
         print("\n(Telegram'a gonderildi.)")
 
 
+def cmd_readiness(args: argparse.Namespace) -> None:
+    """Demo/testnet gunlugunu asgari canliya gecis esiklerine karsi denetler."""
+    from bot.readiness import Thresholds, evaluate, render_html
+
+    base = os.path.dirname(os.path.abspath(__file__))
+    limits = Thresholds(
+        min_trades=args.min_trades,
+        min_days=args.min_days,
+        min_profit_factor=args.min_profit_factor,
+        min_expectancy_pct=args.min_expectancy,
+        max_drawdown_pct=args.max_drawdown,
+        recent_trades=args.recent_trades,
+    )
+    report = evaluate(base, args.mode, limits)
+    text = report.summary()
+    print(text)
+    if args.html:
+        out = args.out or os.path.join(base, "report_readiness.html")
+        with open(out, "w", encoding="utf-8") as f:
+            f.write(render_html(report))
+        print(f"\nHTML hazirlik raporu yazildi: {out}")
+    if args.notify:
+        send_telegram(text[:4000])
+        print("\n(Telegram'a gonderildi.)")
+    if args.require_pass and not report.ready:
+        raise SystemExit(2)
+
+
 def cmd_notify_test(args: argparse.Namespace) -> None:
     """Telegram baglantisini kurar/dogrular: chat ID bulur, test mesaji atar."""
     token = os.environ.get("TELEGRAM_BOT_TOKEN", "")
@@ -585,10 +631,14 @@ def main() -> None:
 
     def risk_sim_flags(sp: argparse.ArgumentParser) -> None:
         """backtest/chart icin mum ici risk simulasyonu bayraklari (0 = kapali)."""
-        sp.add_argument("--stop-loss", type=float, default=0.0, help="%% stop-loss simulasyonu")
-        sp.add_argument("--take-profit", type=float, default=0.0, help="%% kar-al simulasyonu")
+        sp.add_argument("--stop-loss", type=float, default=2.0, help="%% stop-loss simulasyonu")
+        sp.add_argument("--take-profit", type=float, default=4.0, help="%% kar-al simulasyonu")
         sp.add_argument("--trailing-stop", type=float, default=0.0, help="%% iz suren stop")
         sp.add_argument("--cooldown", type=int, default=0, help="Stop sonrasi mum bekleme")
+        sp.add_argument("--risk-pct", type=float, default=1.0,
+                        help="Islem basina riske edilen sermaye %%")
+        sp.add_argument("--max-position", type=float, default=25.0,
+                        help="Tek pozisyon icin sermaye tavani %%")
 
     bt = sub.add_parser("backtest", help="Stratejiyi gecmis veride test et")
     common(bt)
@@ -607,6 +657,7 @@ def main() -> None:
     sc.add_argument("--interval", default="4h")
     sc.add_argument("--bars", type=int, default=1000)
     sc.add_argument("--source", choices=["binance", "synthetic"], default="binance")
+    risk_sim_flags(sc)
 
     tr = sub.add_parser("trade", help="Otomatik islem dongusu (paper/testnet/live)")
     common(tr)
@@ -630,6 +681,8 @@ def main() -> None:
                     help="Buyuk haber saatlerinde yeni giris yapma (kapatmak: --no-news-filter)")
     tr.add_argument("--daily-trend", action=argparse.BooleanOptionalAction, default=True,
                     help="Gunluk SMA200 altindayken long acma (kapatmak: --no-daily-trend)")
+    tr.add_argument("--poll-seconds", type=int, default=60,
+                    help="Stop/risk kontrol araligi saniye (5-300)")
 
     wf = sub.add_parser("walkforward", help="Stratejiyi ardisik zaman dilimlerinde dogrula")
     common(wf)
@@ -671,6 +724,20 @@ def main() -> None:
 
     st = sub.add_parser("stats", help="Gercek islem karnesi (trades_*.csv analizi)")
     st.add_argument("--notify", action="store_true", help="Ozeti Telegram'a da gonder")
+    rd = sub.add_parser("readiness", help="Demo/testnet verisinden canliya hazirlik kapisi")
+    rd.add_argument("--mode", choices=["validation", "paper", "testnet", "demo", "live", "all"],
+                    default="validation", help="Dahil edilecek islem modu")
+    rd.add_argument("--min-trades", type=int, default=100)
+    rd.add_argument("--min-days", type=int, default=60)
+    rd.add_argument("--min-profit-factor", type=float, default=1.20)
+    rd.add_argument("--min-expectancy", type=float, default=0.0)
+    rd.add_argument("--max-drawdown", type=float, default=10.0)
+    rd.add_argument("--recent-trades", type=int, default=30)
+    rd.add_argument("--html", action="store_true", help="Equity/drawdown HTML grafigi uret")
+    rd.add_argument("--out", help="HTML cikti yolu")
+    rd.add_argument("--notify", action="store_true", help="Ozeti Telegram'a da gonder")
+    rd.add_argument("--require-pass", action="store_true",
+                    help="Kapidan kalirsa otomasyon icin cikis kodu 2 dondur")
     sub.add_parser("notify-test", help="Telegram baglantisini kur ve test mesaji at")
     mc = sub.add_parser("montecarlo", help="Backtest + Monte Carlo: sonuc ne kadar sansa bagliydi?")
     common(mc)
@@ -709,6 +776,8 @@ def main() -> None:
         cmd_report(args)
     elif args.cmd == "stats":
         cmd_stats(args)
+    elif args.cmd == "readiness":
+        cmd_readiness(args)
     elif args.cmd == "notify-test":
         cmd_notify_test(args)
     elif args.cmd == "montecarlo":

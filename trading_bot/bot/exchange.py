@@ -162,3 +162,19 @@ def format_qty(qty: float) -> str:
     """Miktari bilimsel gosterimsiz, sondaki sifirlar atilmis yazar
     (Binance '1e-05' gibi degerleri kabul etmez)."""
     return f"{qty:.8f}".rstrip("0").rstrip(".")
+
+
+def average_fill_price(order: dict, fallback: float) -> float:
+    """Binance emir cevabindan gercek agirlikli ortalama dolum fiyati.
+
+    `cummulativeQuoteQty / executedQty` en guvenilir toplamdir. Alanlar
+    yoksa veya gecersizse sinyal anindaki fiyat geri doner.
+    """
+    try:
+        executed = float(order.get("executedQty", 0))
+        quote = float(order.get("cummulativeQuoteQty", 0))
+    except (TypeError, ValueError, AttributeError):
+        return fallback
+    if executed <= 0 or quote <= 0:
+        return fallback
+    return quote / executed
