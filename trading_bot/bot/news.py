@@ -6,8 +6,8 @@ dakikalarda YENI pozisyon acmaz; acik pozisyonlar stop/hedefleriyle
 yasamaya devam eder.
 
 Kaynak: ForexFactory'nin ucretsiz haftalik takvimi (anahtar gerekmez).
-Takvime ulasilamazsa sistem FAIL-OPEN calisir: karantina uygulanmaz,
-bot durmaz - eksik veri, botu susturan bir bahane olmamali.
+Takvime ulasilamazsa paper mod FAIL-OPEN calisabilir; testnet/live modda
+`fail_closed=True` ile yeni giris engellenir.
 """
 
 from __future__ import annotations
@@ -59,6 +59,7 @@ def news_blackout(
     now: float | None = None,
     window_min: int = 30,
     events: list[dict] | None = None,
+    fail_closed: bool = False,
 ) -> tuple[bool, str]:
     """Sembol icin haber karantinasi var mi? (karantina, olay_adi) dondurur.
 
@@ -68,7 +69,9 @@ def news_blackout(
     if events is None:
         try:
             events = fetch_events()
-        except Exception:  # noqa: BLE001 - takvim yoksa fail-open
+        except Exception:  # noqa: BLE001
+            if fail_closed:
+                return True, "ekonomik takvim verisi alinamadi"
             return False, ""
     currencies = symbol_currencies(symbol)
     window = window_min * 60

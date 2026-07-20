@@ -3,6 +3,8 @@
 import os
 import sys
 
+import pytest
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "trading_bot"))
 
 from bot import data, indicators  # noqa: E402
@@ -55,6 +57,44 @@ def test_no_lookahead_signal_executes_next_bar():
     res = run_backtest(candles, BuyHold(), commission_pct=0.0, slippage_pct=0.0)
     assert res.trades[0].entry_ts == candles[1].ts
     assert res.trades[0].entry_price == candles[1].open
+
+
+def test_backtest_position_cap_keeps_unallocated_cash():
+    candles = [
+        data.Candle(ts=1, open=100, high=100, low=100, close=100, volume=1),
+        data.Candle(ts=2, open=100, high=100, low=100, close=100, volume=1),
+        data.Candle(ts=3, open=110, high=110, low=110, close=110, volume=1),
+    ]
+    res = run_backtest(
+        candles, BuyHold(), start_equity=10_000,
+        commission_pct=0, slippage_pct=0, max_position_pct=25,
+    )
+    assert abs(res.end_equity - 10_250) < 1e-9
+    assert abs(res.total_return_pct - 2.5) < 1e-9
+
+
+def test_backtest_risk_position_sizing_matches_live_math():
+    candles = [
+        data.Candle(ts=1, open=100, high=100, low=100, close=100, volume=1),
+        data.Candle(ts=2, open=100, high=100, low=100, close=100, volume=1),
+        data.Candle(ts=3, open=110, high=110, low=110, close=110, volume=1),
+    ]
+    res = run_backtest(
+        candles, BuyHold(), start_equity=10_000,
+        commission_pct=0, slippage_pct=0,
+        stop_loss_pct=2, risk_pct_per_trade=1, max_position_pct=100,
+    )
+    # 10,000 * %1 / %2 = 5,000 pozisyon; %10 fiyat artisi = 500 hesap kari.
+    assert abs(res.end_equity - 10_500) < 1e-9
+    assert abs(res.total_return_pct - 5.0) < 1e-9
+
+
+def test_backtest_risk_sizing_requires_stop():
+    with pytest.raises(ValueError, match="stop_loss_pct"):
+        run_backtest(
+            data.synthetic(n=10), BuyHold(),
+            risk_pct_per_trade=1, stop_loss_pct=0,
+        )
 
 
 def test_rsi_strategy_runs():

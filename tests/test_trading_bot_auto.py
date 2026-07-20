@@ -1,5 +1,6 @@
 """Risk yonetimi, tarama motoru ve borsa imzasi testleri."""
 
+import json
 import os
 import sys
 
@@ -8,7 +9,7 @@ import pytest
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "trading_bot"))
 
 from bot import data  # noqa: E402
-from bot.exchange import sign  # noqa: E402
+from bot.exchange import average_fill_price, sign  # noqa: E402
 from bot.risk import RiskConfig, daily_kill_switch, exit_reason, position_size_quote  # noqa: E402
 from bot.scanner import best_pick, scan  # noqa: E402
 
@@ -27,6 +28,23 @@ def test_position_size_rejects_gambling():
         RiskConfig(risk_pct_per_trade=50.0).validate()  # hesabin yarisini riske atmak yok
 
 
+@pytest.mark.parametrize(
+    "cfg",
+    [
+        RiskConfig(max_position_pct=0),
+        RiskConfig(max_daily_loss_pct=0),
+        RiskConfig(max_daily_loss_pct=25),
+        RiskConfig(trailing_stop_pct=-1),
+        RiskConfig(atr_stop_mult=-1),
+        RiskConfig(cooldown_bars=-1),
+        RiskConfig(stoploss_guard=-1),
+    ],
+)
+def test_risk_config_rejects_unsafe_ranges(cfg):
+    with pytest.raises(ValueError):
+        cfg.validate()
+
+
 def test_exit_reason_stop_and_take_profit():
     cfg = RiskConfig(stop_loss_pct=2.0, take_profit_pct=4.0)
     assert exit_reason(100.0, 97.9, cfg) == "stop_loss"
@@ -38,6 +56,12 @@ def test_daily_kill_switch():
     cfg = RiskConfig(max_daily_loss_pct=5.0)
     assert daily_kill_switch(10_000, 9_400, cfg) is True
     assert daily_kill_switch(10_000, 9_700, cfg) is False
+
+
+def test_exchange_average_fill_price():
+    order = {"executedQty": "2.5", "cummulativeQuoteQty": "251.25"}
+    assert average_fill_price(order, 99.0) == pytest.approx(100.5)
+    assert average_fill_price({}, 99.0) == 99.0
 
 
 def test_scan_ranks_by_out_of_sample():
@@ -90,6 +114,28 @@ def test_trader_state_path_per_symbol():
 
     assert state_path("btcusdt").endswith("trader_state_BTCUSDT.json")
     assert state_path("ETHUSDT") != state_path("BTCUSDT")
+    assert state_path("BTCUSDT", "testnet").endswith("trader_state_BTCUSDT_testnet.json")
+    assert state_path("BTCUSDT", "live").endswith("trader_state_BTCUSDT_live.json")
+    assert state_path("BTCUSDT", "paper") != state_path("BTCUSDT", "live")
+
+
+def test_trader_state_is_atomic_and_mode_tagged(tmp_path, monkeypatch):
+    from bot import trader as trader_mod
+    from bot.exchange import BinanceSpot
+    from bot.strategies import BuyHold
+    from bot.trader import Trader, TraderConfig
+
+    monkeypatch.setattr(trader_mod, "_BASE_DIR", str(tmp_path))
+    t = Trader(
+        BuyHold(),
+        TraderConfig(symbol="TESTUSDT", mode="testnet"),
+        BinanceSpot(testnet=True),
+    )
+    t._save_state()
+    saved = json.loads((tmp_path / "trader_state_TESTUSDT_testnet.json").read_text())
+    assert saved["symbol"] == "TESTUSDT"
+    assert saved["mode"] == "testnet"
+    assert not (tmp_path / "trader_state_TESTUSDT_testnet.json.tmp").exists()
 
 
 def test_load_env_does_not_override(tmp_path, monkeypatch):
@@ -196,7 +242,34 @@ def test_trade_csv_written(tmp_path, monkeypatch):
     assert csv_path.exists()
     lines = csv_path.read_text().strip().splitlines()
     assert lines[0].startswith("zaman,")
-    assert ",100.0,110.0,10.0000,test" in lines[1]
+    assert ",100.0,110.0,10.0000,10.000000,test" in lines[1]
+
+
+def test_trade_csv_migrates_legacy_schema_fail_closed(tmp_path, monkeypatch):
+    import csv
+
+    from bot import trader as trader_mod
+    from bot.exchange import BinanceSpot
+    from bot.strategies import BuyHold
+    from bot.trader import Trader, TraderConfig
+
+    monkeypatch.setattr(trader_mod, "_BASE_DIR", str(tmp_path))
+    path = tmp_path / "trades_TESTUSDT.csv"
+    path.write_text(
+        "zaman,mod,sembol,giris,cikis,kz_yuzde,neden\n"
+        "2026-01-01 00:00:00,paper,TESTUSDT,100,110,10,test\n",
+        encoding="utf-8",
+    )
+    trader = Trader(
+        BuyHold(),
+        TraderConfig(symbol="TESTUSDT", mode="paper", start_equity=1000.0),
+        BinanceSpot(testnet=False),
+    )
+    trader._append_trade_csv(100, 105, 5, 1.25, "test2")
+    with path.open(newline="", encoding="utf-8") as f:
+        rows = list(csv.DictReader(f))
+    assert rows[0]["hesap_kz_yuzde"] == ""  # eski veri kaldiraci bilmiyor
+    assert rows[1]["hesap_kz_yuzde"] == "1.250000"
 
 
 def test_yahoo_symbol_mapping():
@@ -358,6 +431,24 @@ def test_backtest_take_profit_triggers_intrabar():
     assert len(tps) == 1 and abs(tps[0].exit_price - 104.0) < 1e-9
 
 
+def test_backtest_stop_gap_uses_worse_open_price():
+    from bot.backtest import run_backtest
+    from bot.strategies import BuyHold
+
+    candles = [
+        _mk(1, 100, 101, 99, 100),
+        _mk(2, 100, 101, 99, 100),  # giris @ 100
+        _mk(3, 90, 92, 88, 91),     # %2 stop 98; ama piyasa 90'dan acildi
+    ]
+    res = run_backtest(
+        candles, BuyHold(), commission_pct=0, slippage_pct=0,
+        stop_loss_pct=2.0,
+    )
+    stop = next(t for t in res.trades if t.reason == "stop_loss")
+    assert stop.exit_price == 90
+    assert stop.pnl_pct == pytest.approx(-10.0)
+
+
 def test_backtest_no_risk_flags_matches_old_behavior():
     from bot.backtest import run_backtest
     from bot.strategies import SmaCross
@@ -512,6 +603,19 @@ def test_news_blackout_window():
     assert news_blackout("BTCUSDT", now=now, events=[])[0] is False
 
 
+def test_news_blackout_can_fail_closed(monkeypatch):
+    from bot import news
+
+    def broken():
+        raise OSError("takvim yok")
+
+    monkeypatch.setattr(news, "fetch_events", broken)
+    assert news.news_blackout("EURUSD", fail_closed=False) == (False, "")
+    blocked, reason = news.news_blackout("EURUSD", fail_closed=True)
+    assert blocked is True
+    assert "alinamadi" in reason
+
+
 def test_adx_bounds_and_warmup():
     from bot.indicators import adx
 
@@ -598,6 +702,15 @@ def test_daily_trend_filter(tmp_path, monkeypatch):
     off = Trader(BuyHold(), TraderConfig(symbol="T3USDT", interval="1h",
                                          mode="paper", mtf_daily=False), FakeEx(rising=False))
     assert off._daily_trend_ok() is True
+
+    class BrokenEx:
+        def klines(self, *args, **kwargs):
+            raise OSError("veri yok")
+
+    paper = Trader(BuyHold(), TraderConfig(symbol="PAPERUSDT", mode="paper"), BrokenEx())
+    live = Trader(BuyHold(), TraderConfig(symbol="LIVEUSDT", mode="live"), BrokenEx())
+    assert paper._daily_trend_ok() is True
+    assert live._daily_trend_ok() is False
 
 
 def test_sortino_and_calmar():

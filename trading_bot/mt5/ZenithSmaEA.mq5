@@ -1,5 +1,5 @@
 //+------------------------------------------------------------------+
-//| ZenithSmaEA.mq5  v2                                              |
+//| ZenithSmaEA.mq5  v2.20                                           |
 //| SMA kesisim stratejisi + tam risk zinciri - egitim amacli EA     |
 //|                                                                  |
 //| Python botundaki (trading_bot/) risk yonetiminin MQL5 karsiligi: |
@@ -10,11 +10,11 @@
 //|  - Cooldown: pozisyon kapandiktan sonra N mum yeni giris yok     |
 //|  - Lot, "islem basina % risk" kuralindan hesaplanir              |
 //|                                                                  |
-//| SADECE DEMO HESAPTA kullanin. MetaEditor'de F7 ile derleyin,     |
-//| Strateji Sinayici'da (Ctrl+R) yillarca veride test edin.         |
+//| Varsayilan DEMO'dur. Canli hesap acik ve tam hesap kilidi ister. |
+//| MetaEditor F7 ile derleyin; once Strateji Sinayici'da test edin. |
 //+------------------------------------------------------------------+
 #property copyright "Zenith contributors"
-#property version   "2.00"
+#property version   "2.20"
 #property strict
 
 #include <Trade\Trade.mqh>
@@ -31,6 +31,12 @@ input int    TakeProfitPoints    = 4000;     // Take-profit (puan)
 input int    TrailingStopPoints  = 0;        // Iz suren stop (puan, 0 = kapali)
 input double MaxDailyLossPercent = 5.0;      // Gunluk zarar freni (%, 0 = kapali)
 input int    CooldownBars        = 3;        // Kapanis sonrasi bekleme (mum)
+input int    MaxSpreadPoints     = 50;       // Yeni alim icin en yuksek spread (puan)
+input bool   AllowLiveAccount    = false;    // Varsayilan: sadece demo hesap
+input ulong  LiveAccountLogin    = 0;        // Canlida izin verilen TAM hesap no
+input double MaxMarginPercent    = 20.0;     // Tek emrin azami equity/margin orani
+input bool   AllowWeekendEntry   = false;    // Cuma gec/hafta sonu yeni giris
+input int    FridayCutoffHourUTC = 18;       // Cuma yeni giris kesme saati (UTC)
 input ulong  MagicNumber         = 20260708; // Bu EA'nin islem imzasi
 
 int fastHandle = INVALID_HANDLE;
@@ -46,10 +52,36 @@ bool     g_hadPosition = false; // kapanis tespiti icin onceki tur durumu
 //+------------------------------------------------------------------+
 int OnInit()
   {
-   if(FastPeriod >= SlowPeriod)
+   if(FastPeriod <= 0 || SlowPeriod <= 0 || FastPeriod >= SlowPeriod)
      {
-      Print("Hata: FastPeriod < SlowPeriod olmali");
+      Print("Hata: periyotlar pozitif ve FastPeriod < SlowPeriod olmali");
       return(INIT_PARAMETERS_INCORRECT);
+     }
+   if(RiskPercent <= 0 || RiskPercent > 5 || StopLossPoints <= 0
+      || TakeProfitPoints <= 0 || MaxDailyLossPercent < 0
+      || MaxDailyLossPercent > 20 || CooldownBars < 0 || MaxSpreadPoints <= 0
+      || MaxMarginPercent <= 0 || MaxMarginPercent > 100
+      || FridayCutoffHourUTC < 0 || FridayCutoffHourUTC > 23)
+     {
+      Print("Hata: risk/SL/TP/gunluk limit/cooldown/spread parametreleri gecersiz");
+      return(INIT_PARAMETERS_INCORRECT);
+     }
+   long tradeMode = AccountInfoInteger(ACCOUNT_TRADE_MODE);
+   ulong accountLogin = (ulong)AccountInfoInteger(ACCOUNT_LOGIN);
+   if(tradeMode != ACCOUNT_TRADE_MODE_DEMO
+      && (!AllowLiveAccount || LiveAccountLogin == 0 || LiveAccountLogin != accountLogin))
+     {
+      Print("GUVENLIK: Canli hesap icin AllowLiveAccount=true ve LiveAccountLogin=",
+            accountLogin, " birlikte gerekir.");
+      return(INIT_PARAMETERS_INCORRECT);
+     }
+   if(!TerminalInfoInteger(TERMINAL_TRADE_ALLOWED)
+      || !MQLInfoInteger(MQL_TRADE_ALLOWED)
+      || !AccountInfoInteger(ACCOUNT_TRADE_ALLOWED)
+      || !AccountInfoInteger(ACCOUNT_TRADE_EXPERT))
+     {
+      Print("GUVENLIK: Terminal/hesap Expert Advisor islemlerine izin vermiyor.");
+      return(INIT_FAILED);
      }
    fastHandle = iMA(_Symbol, _Period, FastPeriod, 0, MODE_SMA, PRICE_CLOSE);
    slowHandle = iMA(_Symbol, _Period, SlowPeriod, 0, MODE_SMA, PRICE_CLOSE);
@@ -62,6 +94,8 @@ int OnInit()
          return(INIT_FAILED);
      }
    trade.SetExpertMagicNumber(MagicNumber);
+   trade.SetTypeFillingBySymbol(_Symbol);
+   trade.SetDeviationInPoints(20);
    return(INIT_SUCCEEDED);
   }
 
@@ -106,8 +140,10 @@ void CloseAllPositions(const string reason)
    ulong ticket = MyPositionTicket();
    if(ticket > 0)
      {
-      trade.PositionClose(ticket);
-      Print("Pozisyon kapatildi: ", reason);
+      if(trade.PositionClose(ticket))
+         Print("Pozisyon kapatildi: ", reason);
+      else
+         Print("Pozisyon KAPATILAMADI (", reason, "): ", trade.ResultRetcodeDescription());
      }
   }
 
@@ -127,9 +163,13 @@ double LotsByRisk()
    double step   = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_STEP);
    double minLot = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MIN);
    double maxLot = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MAX);
-   if(step > 0)
-      lots = MathFloor(lots / step) * step;
-   return(MathMin(MathMax(lots, minLot), maxLot));
+    if(step > 0)
+       lots = MathFloor(lots / step) * step;
+    // Minimum lota YUKARI yuvarlamak belirlenen para riskini asabilir.
+    // Hesaplanan miktar minimumun altindaysa islem acmamak daha guvenlidir.
+    if(lots < minLot)
+       return(0.0);
+    return(MathMin(lots, maxLot));
   }
 
 //+------------------------------------------------------------------+
@@ -213,6 +253,17 @@ void OnTick()
 
    if(crossUp && !nowHasPosition)
      {
+      if(!AllowWeekendEntry)
+        {
+         MqlDateTime utc;
+         TimeToStruct(TimeGMT(), utc);
+         if(utc.day_of_week == 6 || utc.day_of_week == 0
+            || (utc.day_of_week == 5 && utc.hour >= FridayCutoffHourUTC))
+           {
+            Print("Hafta sonu/gap korumasi: yeni giris yok");
+            return;
+           }
+        }
       // cooldown: son kapanistan bu yana yeterli mum gecti mi?
       if(CooldownBars > 0 && g_lastCloseTime > 0
          && TimeCurrent() - g_lastCloseTime < (long)CooldownBars * PeriodSeconds(_Period))
@@ -233,6 +284,20 @@ void OnTick()
             Print("trend filtresi: fiyat SMA", TrendPeriod, " altinda, giris yok");
             return;
            }
+       }
+      double bid = SymbolInfoDouble(_Symbol, SYMBOL_BID);
+      double ask = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
+      if(bid <= 0 || ask <= 0 || ask < bid)
+        {
+         Print("Gecersiz kotasyon, giris yok");
+         return;
+        }
+      double spreadPoints = (ask - bid) / _Point;
+      if(spreadPoints > MaxSpreadPoints)
+        {
+         Print("Spread ", DoubleToString(spreadPoints, 1), " puan; limit ",
+               MaxSpreadPoints, ", giris yok");
+         return;
         }
       double lots = LotsByRisk();
       if(lots <= 0)
@@ -240,10 +305,24 @@ void OnTick()
          Print("Lot hesaplanamadi, islem yok");
          return;
         }
-      double ask = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
       double sl  = NormalizeDouble(ask - StopLossPoints * _Point, _Digits);
       double tp  = NormalizeDouble(ask + TakeProfitPoints * _Point, _Digits);
-      if(!trade.Buy(lots, _Symbol, 0.0, sl, tp, "ZenithSmaEA v2"))
+      long stopsLevel = SymbolInfoInteger(_Symbol, SYMBOL_TRADE_STOPS_LEVEL);
+      if((ask - sl) / _Point < stopsLevel || (tp - ask) / _Point < stopsLevel)
+        {
+         Print("SL/TP broker minimum mesafesini karsilamiyor: ", stopsLevel, " puan");
+         return;
+        }
+      double requiredMargin = 0.0;
+      double equity = AccountInfoDouble(ACCOUNT_EQUITY);
+      if(!OrderCalcMargin(ORDER_TYPE_BUY, _Symbol, lots, ask, requiredMargin)
+         || equity <= 0 || requiredMargin > equity * MaxMarginPercent / 100.0)
+        {
+         Print("Margin limiti/on kontrolu basarisiz; giris yok. Gereken=",
+               requiredMargin, " equity=", equity);
+         return;
+        }
+      if(!trade.Buy(lots, _Symbol, 0.0, sl, tp, "ZenithSmaEA v2.20"))
          Print("Alim emri basarisiz: ", trade.ResultRetcodeDescription());
      }
   }
