@@ -27,6 +27,13 @@ from .strategies import (
     Strategy,
 )
 
+DEFAULT_RISK_SIM = {
+    "stop_loss_pct": 2.0,
+    "take_profit_pct": 4.0,
+    "risk_pct_per_trade": 1.0,
+    "max_position_pct": 25.0,
+}
+
 
 def default_grid() -> list[Strategy]:
     """Taranacak varsayilan strateji/parametre kombinasyonlari."""
@@ -73,11 +80,13 @@ def scan(
     train_ratio: float = 0.7,
     commission_pct: float = 0.1,
     slippage_pct: float = 0.05,
+    **risk_kwargs,
 ) -> list[ScanResult]:
     """Tum kombinasyonlari calistirir, dogrulama getirisine gore siralar."""
     if not 0.5 <= train_ratio <= 0.9:
         raise ValueError("train_ratio 0.5-0.9 arasi olmali")
     strategies = strategies or default_grid()
+    risk_params = {**DEFAULT_RISK_SIM, **risk_kwargs}
     results: list[ScanResult] = []
     for symbol in symbols:
         candles = fetch(symbol)
@@ -86,8 +95,16 @@ def scan(
         if len(train) < 120 or len(test) < 40:
             raise ValueError(f"{symbol}: tarama icin yeterli veri yok ({len(candles)} mum)")
         for strat in strategies:
-            r_train = run_backtest(train, strat, commission_pct=commission_pct, slippage_pct=slippage_pct)
-            r_test = run_backtest(test, strat, commission_pct=commission_pct, slippage_pct=slippage_pct)
+            r_train = run_backtest(
+                train, strat,
+                commission_pct=commission_pct, slippage_pct=slippage_pct,
+                **risk_params,
+            )
+            r_test = run_backtest(
+                test, strat,
+                commission_pct=commission_pct, slippage_pct=slippage_pct,
+                **risk_params,
+            )
             results.append(
                 ScanResult(
                     symbol=symbol,
@@ -121,6 +138,7 @@ def walk_forward(
     """
     if segments < 2:
         raise ValueError("segments en az 2 olmali")
+    risk_params = {**DEFAULT_RISK_SIM, **risk_kwargs}
     seg_len = len(candles) // segments
     if seg_len < 60:
         raise ValueError(f"Dilim basina en az 60 mum gerekir ({seg_len} dustu)")
@@ -129,7 +147,7 @@ def walk_forward(
         chunk = candles[i * seg_len:(i + 1) * seg_len]
         r = run_backtest(
             chunk, strategy,
-            commission_pct=commission_pct, slippage_pct=slippage_pct, **risk_kwargs,
+            commission_pct=commission_pct, slippage_pct=slippage_pct, **risk_params,
         )
         returns.append(r.total_return_pct)
     return returns
